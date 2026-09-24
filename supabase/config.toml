@@ -1,0 +1,3 @@
+[functions.documind-ai]
+verify_jwt = true
+entrypoint = "./functions/documind-ai/index.ts"
