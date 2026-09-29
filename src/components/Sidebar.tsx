@@ -111,8 +111,8 @@ export function Sidebar({
                   AI
                 </span>
               </div>
-              <div className="text-[11px] text-white/60 tracking-wide mt-0.5">
-                Document & Learning Assistant
+              <div className="text-[10px] text-[#7dd3c4] font-medium tracking-wide mt-0.5">
+                Turn Documents Into Intelligence
               </div>
             </div>
           </div>

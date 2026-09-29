@@ -693,7 +693,7 @@ export async function testGeminiKey(key: string): Promise<boolean> {
 
 function extractAnswer(question: string, citations: Citation[], mode: AIMode = 'grounded'): string {
   if (!citations.length) {
-    return "I couldn't find information directly answering your question in the uploaded documents. Try rephrasing your question or uploading additional documents.";
+    return "I couldn't find enough information in the selected documents to answer this question.";
   }
 
   const qLower = question.toLowerCase();
@@ -990,7 +990,7 @@ Politely inform the user that their uploaded documents do not contain informatio
       }
     }
     return {
-      answer: `I couldn't find enough information in the selected documents to answer this question. Please upload additional context or rephrase your query.`,
+      answer: "I couldn't find enough information in the selected documents to answer this question.",
       citations: [],
       model: 'local-bm25-grounded',
       retrievalType: searchResult.retrievalType,
@@ -1775,6 +1775,7 @@ JSON ARRAY:`;
 export type StudyMaterialType =
   | 'summary'
   | 'short_notes'
+  | 'important_questions'
   | 'viva_questions'
   | 'exam_questions'
   | 'key_concepts'
@@ -1813,6 +1814,13 @@ Structure with:
 ## 📊 Key Data Points, Dates & Metrics
 ## 💡 Important Rules, Principles & Guidelines
 Use bold highlights, bullet points, and clean GitHub markdown.`,
+
+    important_questions: `Generate 6-8 High-Yield Important Questions with comprehensive model answers based strictly on "${docName}".
+Level: ${difficulty.toUpperCase()} (${difficultyInstructions[difficulty]}).
+Structure with:
+### Question [number]: [High-impact question]
+**Model Answer:** [In-depth answer directly citing document facts]
+**Key Concept Tested:** [Underlying theme or rule]`,
 
     viva_questions: `Generate 6-8 challenging Viva / Oral Examination Questions with model answers based strictly on "${docName}".
 Level: ${difficulty.toUpperCase()} (${difficultyInstructions[difficulty]}).

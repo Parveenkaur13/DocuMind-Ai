@@ -33,17 +33,21 @@ export function AuthScreen() {
           </div>
         </div>
         <div className="relative z-10 space-y-8">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-xs text-[#7dd3c4] text-xs font-semibold tracking-wide border border-white/10">
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Intelligent Document & Personalized Learning Assistant</span>
+          </div>
           <h1 className="display text-4xl font-700 leading-tight">
-            Chat with your documents.<br />Get grounded answers.
+            Turn Your Documents Into Intelligence
           </h1>
           <p className="text-white/80 text-lg leading-relaxed max-w-md">
-            Upload any document and ask questions in natural language. Every response is verified with exact citations from your files, powered by Google Gemini and RAG.
+            Upload documents, understand knowledge, ask questions, compare information, and generate personalized learning material using AI.
           </p>
           <div className="space-y-4 max-w-md">
             {[
-              { icon: Search, title: 'Instant Semantic Search', desc: 'Find relevant answers across all your documents in seconds.' },
-              { icon: Sparkles, title: 'Gemini RAG Intelligence', desc: 'Grounded question answering with source citations.' },
-              { icon: ShieldCheck, title: 'Secure & Private Storage', desc: 'Supabase database with owner-scoped row-level security.' },
+              { icon: Search, title: 'Multi-Document Semantic RAG', desc: 'Query multiple documents simultaneously with zero hallucinations.' },
+              { icon: Sparkles, title: 'Personalized Learning Suite', desc: 'Generate MCQs, flashcards, viva questions, and adaptive study notes.' },
+              { icon: ShieldCheck, title: 'Grounded Source Citations', desc: 'Every answer is attributed to verified passages in your files.' },
             ].map((f) => (
               <div key={f.title} className="flex items-start gap-3.5">
                 <div className="w-9 h-9 rounded-lg bg-white/12 flex items-center justify-center flex-shrink-0">
@@ -57,7 +61,7 @@ export function AuthScreen() {
             ))}
           </div>
         </div>
-        <div className="relative z-10 text-white/40 text-sm">DocuMind AI Knowledge Assistant</div>
+        <div className="relative z-10 text-white/40 text-sm">DocuMind AI • Enterprise Intelligence Platform</div>
       </div>
 
       <div className="flex items-center justify-center p-6 sm:p-12">

@@ -49,7 +49,9 @@ interface StudyModeViewProps {
 }
 
 type StudyTab =
+  | 'summary'
   | 'short_notes'
+  | 'important_questions'
   | 'mcq'
   | 'flashcards'
   | 'viva_questions'
@@ -156,7 +158,9 @@ export function StudyModeView({
         .catch(() => showToast('Failed to load podcast dialogue', 'error'))
         .finally(() => setLoadingPodcast(false));
     } else if (
+      activeTab === 'summary' ||
       activeTab === 'short_notes' ||
+      activeTab === 'important_questions' ||
       activeTab === 'viva_questions' ||
       activeTab === 'exam_questions' ||
       activeTab === 'key_concepts' ||
@@ -362,12 +366,14 @@ export function StudyModeView({
         {/* Study Navigation Tabs */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
           {[
+            { id: 'summary', label: 'Summary', icon: Sparkles },
             { id: 'short_notes', label: 'Short Notes', icon: FileText },
+            { id: 'important_questions', label: 'Important Questions', icon: HelpCircle },
             { id: 'mcq', label: 'MCQs & Quizzes', icon: CheckCircle2 },
             { id: 'flashcards', label: 'Flashcards', icon: Layers },
-            { id: 'viva_questions', label: 'Viva Questions', icon: HelpCircle },
+            { id: 'viva_questions', label: 'Viva Questions', icon: MessageSquare },
             { id: 'exam_questions', label: 'Exam Questions', icon: BookOpen },
-            { id: 'key_concepts', label: 'Key Concepts', icon: Sparkles },
+            { id: 'key_concepts', label: 'Key Concepts', icon: Award },
             { id: 'explain_beginner', label: 'Beginner Guide', icon: GraduationCap },
             { id: 'podcast', label: 'Audio Podcast', icon: Headphones },
           ].map((tab) => {
