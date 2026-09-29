@@ -1,0 +1,54 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0e2a27"/>
+      <stop offset="50%" stop-color="#1c4e48"/>
+      <stop offset="100%" stop-color="#2a7267"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7dd3c4"/>
+      <stop offset="100%" stop-color="#3c8b7e"/>
+    </linearGradient>
+    <linearGradient id="sparkle" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#7dd3c4"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="12" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+
+  <!-- Background squircle -->
+  <rect width="512" height="512" rx="128" fill="url(#bg)"/>
+  
+  <!-- Outer subtle border -->
+  <rect x="8" y="8" width="496" height="496" rx="120" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="4"/>
+
+  <!-- Document Body with Folded Corner -->
+  <g transform="translate(106, 86)">
+    <!-- Base Document Shadow/Glow -->
+    <path d="M 40 0 L 200 0 L 280 80 L 280 320 C 280 331 271 340 260 340 L 40 340 C 29 340 20 331 20 320 L 20 20 C 20 9 29 0 40 0 Z" 
+          fill="none" stroke="url(#accent)" stroke-width="8" filter="url(#glow)" opacity="0.4"/>
+    
+    <!-- Base Document Main -->
+    <path d="M 40 0 L 200 0 L 280 80 L 280 320 C 280 331 271 340 260 340 L 40 340 C 29 340 20 331 20 320 L 20 20 C 20 9 29 0 40 0 Z" 
+          fill="rgba(255,255,255,0.06)" stroke="url(#accent)" stroke-width="8" stroke-linejoin="round"/>
+    
+    <!-- Folded Corner Flap -->
+    <path d="M 200 0 L 200 80 L 280 80 Z" fill="#2a7267" stroke="url(#accent)" stroke-width="6" stroke-linejoin="round"/>
+
+    <!-- Document Neural/Text Lines -->
+    <line x1="60" y1="120" x2="240" y2="120" stroke="rgba(255,255,255,0.7)" stroke-width="8" stroke-linecap="round"/>
+    <line x1="60" y1="165" x2="220" y2="165" stroke="rgba(255,255,255,0.5)" stroke-width="8" stroke-linecap="round"/>
+    <line x1="60" y1="210" x2="240" y2="210" stroke="rgba(255,255,255,0.5)" stroke-width="8" stroke-linecap="round"/>
+    <line x1="60" y1="255" x2="180" y2="255" stroke="rgba(255,255,255,0.4)" stroke-width="8" stroke-linecap="round"/>
+
+    <!-- AI Sparkle Icon -->
+    <g transform="translate(195, 235)">
+      <circle cx="20" cy="20" r="38" fill="#1c4e48" stroke="#7dd3c4" stroke-width="4"/>
+      <!-- 4-point star -->
+      <path d="M 20 4 Q 20 20 36 20 Q 20 20 20 36 Q 20 20 4 20 Q 20 20 20 4 Z" fill="url(#sparkle)"/>
+    </g>
+  </g>
+</svg>

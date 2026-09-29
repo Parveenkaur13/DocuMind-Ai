@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { FileText, Sparkles, ShieldCheck, Search } from 'lucide-react';
-import { useAuth } from '@/lib/auth-context';
+import { FileText, Sparkles, ShieldCheck, Search, ArrowRight } from 'lucide-react';
+import { useAuth } from '../lib/auth-context';
 
 export function AuthScreen() {
-  const { signIn, signUp } = useAuth();
-  const [mode, setMode] = useState<'signin' | 'signup'>('signup');
+  const { signIn, signUp, continueAsGuest } = useAuth();
+  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -37,13 +37,13 @@ export function AuthScreen() {
             Chat with your documents.<br />Get grounded answers.
           </h1>
           <p className="text-white/80 text-lg leading-relaxed max-w-md">
-            Upload any document and ask questions in plain English. Every answer is backed by citations from your own files.
+            Upload any document and ask questions in natural language. Every response is verified with exact citations from your files, powered by Google Gemini and RAG.
           </p>
           <div className="space-y-4 max-w-md">
             {[
-              { icon: Search, title: 'Instant search', desc: 'Find answers across all your documents in seconds.' },
-              { icon: Sparkles, title: 'AI summaries', desc: 'Auto-generate concise summaries of long documents.' },
-              { icon: ShieldCheck, title: 'Private & secure', desc: 'Your documents are encrypted and only yours.' },
+              { icon: Search, title: 'Instant Semantic Search', desc: 'Find relevant answers across all your documents in seconds.' },
+              { icon: Sparkles, title: 'Gemini RAG Intelligence', desc: 'Grounded question answering with source citations.' },
+              { icon: ShieldCheck, title: 'Secure & Private Storage', desc: 'Supabase database with owner-scoped row-level security.' },
             ].map((f) => (
               <div key={f.title} className="flex items-start gap-3.5">
                 <div className="w-9 h-9 rounded-lg bg-white/12 flex items-center justify-center flex-shrink-0">
@@ -57,7 +57,7 @@ export function AuthScreen() {
             ))}
           </div>
         </div>
-        <div className="relative z-10 text-white/40 text-sm">© 2024 DocuMind AI. All rights reserved.</div>
+        <div className="relative z-10 text-white/40 text-sm">DocuMind AI Knowledge Assistant</div>
       </div>
 
       <div className="flex items-center justify-center p-6 sm:p-12">
@@ -72,7 +72,7 @@ export function AuthScreen() {
             {mode === 'signin' ? 'Welcome back' : 'Create your account'}
           </h2>
           <p className="text-[#5e7a76] text-sm mb-6">
-            {mode === 'signin' ? 'Sign in to continue to your workspace.' : 'Start chatting with your documents in minutes.'}
+            {mode === 'signin' ? 'Sign in to access your document knowledge base.' : 'Start chatting with your documents in seconds.'}
           </p>
 
           <form onSubmit={submit} className="space-y-4">
@@ -109,9 +109,25 @@ export function AuthScreen() {
               disabled={busy}
               className="w-full py-2.5 rounded-lg bg-[#1c4e48] text-white font-600 hover:bg-[#163d38] transition disabled:opacity-50"
             >
-              {busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : 'Create account'}
+              {busy ? 'Connecting…' : mode === 'signin' ? 'Sign in' : 'Create account'}
             </button>
           </form>
+
+          <div className="my-4 flex items-center gap-3">
+            <div className="flex-1 h-px bg-[#e8efed]" />
+            <span className="text-xs text-[#5e7a76] uppercase font-600 tracking-wider">or</span>
+            <div className="flex-1 h-px bg-[#e8efed]" />
+          </div>
+
+          <button
+            onClick={() => continueAsGuest()}
+            type="button"
+            className="w-full py-2.5 px-4 rounded-lg border border-[#3c8b7e] text-[#1c4e48] bg-[#f0f7f5] hover:bg-[#e0ede9] font-600 transition text-sm flex items-center justify-center gap-2 shadow-sm"
+          >
+            <Sparkles className="w-4 h-4 text-[#3c8b7e]" />
+            Continue as Guest (Instant Access)
+            <ArrowRight className="w-4 h-4" />
+          </button>
 
           <p className="text-center text-sm text-[#5e7a76] mt-5">
             {mode === 'signin' ? "Don't have an account? " : 'Already have an account? '}

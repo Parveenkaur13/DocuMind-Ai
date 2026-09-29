@@ -1,10 +1,10 @@
-import { useAuth } from '@/lib/auth-context';
-import { AuthScreen } from '@/components/AuthScreen';
-import { Workspace } from '@/components/Workspace';
+import { useAuth } from './lib/auth-context';
+import { AuthScreen } from './components/AuthScreen';
+import { Workspace } from './components/Workspace';
 import { FileText, Loader2 } from 'lucide-react';
 
 function App() {
-  const { session, loading } = useAuth();
+  const { session, isGuest, loading } = useAuth();
 
   if (loading) {
     return (
@@ -19,7 +19,7 @@ function App() {
     );
   }
 
-  if (!session) return <AuthScreen />;
+  if (!session && !isGuest) return <AuthScreen />;
   return <Workspace />;
 }
 

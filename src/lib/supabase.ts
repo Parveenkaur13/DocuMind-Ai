@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL ?? import.meta.env.SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY ?? import.meta.env.SUPABASE_ANON_KEY;
+const env = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env : (process.env as Record<string, string | undefined>);
+const supabaseUrl = env?.VITE_SUPABASE_URL ?? env?.SUPABASE_URL ?? 'https://placeholder.supabase.co';
+const supabaseAnonKey = env?.VITE_SUPABASE_ANON_KEY ?? env?.SUPABASE_ANON_KEY ?? 'placeholder-key';
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
