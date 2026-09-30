@@ -11,8 +11,6 @@ import {
   Square,
   Sparkles,
   Layers,
-  Clock,
-  HardDrive,
   Copy,
   Check,
   Download,
@@ -20,18 +18,11 @@ import {
   ChevronRight,
   Filter,
   Eye,
-  GitCompare,
-  Tag,
   ArrowRight,
-  Share2,
-  Calendar,
-  Briefcase,
-  DollarSign,
-  Cpu,
   ChevronDown,
 } from 'lucide-react';
 import type { DocItem } from './Sidebar';
-import { splitIntoChunks, extractEntitiesFromText, type ExtractedEntity } from '../lib/ai';
+import { splitIntoChunks, extractEntitiesFromText } from '../lib/ai';
 import { useToast } from './Toast';
 
 interface DocumentsViewProps {
@@ -671,6 +662,14 @@ export function DocumentsView({
                 >
                   Ask AI ({selectedDocIds.length})
                 </button>
+                {selectedDocIds.length >= 2 && onNavigateToCompare && (
+                  <button
+                    onClick={onNavigateToCompare}
+                    className="px-2.5 py-0.5 rounded-lg bg-white border border-[#3c8b7e] text-[#1c4e48] hover:bg-[#d8ece7] text-[11px] font-semibold transition cursor-pointer"
+                  >
+                    Compare ({selectedDocIds.length})
+                  </button>
+                )}
                 <button
                   onClick={onClearSelectedDocIds}
                   className="text-[#5e7a76] hover:text-[#183237] text-[11px] cursor-pointer"

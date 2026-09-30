@@ -22,12 +22,10 @@ import {
   Cpu,
   RefreshCw,
   ExternalLink,
-  ChevronDown,
   Trash2,
   Share2,
   Edit2,
   History,
-  Layers,
   ChevronLeft,
 } from 'lucide-react';
 import { askDocuMind, type Citation, type AIMode } from '../lib/ai';
@@ -347,6 +345,12 @@ export function ChatPanel({
   const groupedHistory = useMemo(() => {
     return groupConversationsByDate(filteredConvs);
   }, [filteredConvs]);
+
+  const displayedMessages = useMemo(() => {
+    const term = chatSearch.trim().toLowerCase();
+    if (!term) return messages;
+    return messages.filter((m) => m.content.toLowerCase().includes(term));
+  }, [messages, chatSearch]);
 
   const suggestions = docsToSearch.length > 1
     ? [
@@ -733,6 +737,30 @@ export function ChatPanel({
 
           {/* Right Header Actions */}
           <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Quick Study Mode Button if a document is active */}
+            {activeDoc && onOpenStudyModal && (
+              <button
+                onClick={() => onOpenStudyModal(activeDoc)}
+                className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[#d4e0dd] hover:border-[#3c8b7e] bg-white text-[#5e7a76] hover:text-[#1c4e48] text-xs font-semibold transition cursor-pointer"
+                title={`Open Study Mode for ${activeDoc.name}`}
+              >
+                <BookOpen className="w-3.5 h-3.5 text-[#3c8b7e]" />
+                <span className="hidden md:inline">Study</span>
+              </button>
+            )}
+
+            {/* Quick Compare Button if multiple documents selected */}
+            {docsToSearch.length > 1 && onOpenCompare && (
+              <button
+                onClick={onOpenCompare}
+                className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[#d4e0dd] hover:border-[#3c8b7e] bg-white text-[#5e7a76] hover:text-[#1c4e48] text-xs font-semibold transition cursor-pointer"
+                title="Compare selected documents side-by-side"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5 text-[#3c8b7e]" />
+                <span className="hidden md:inline">Compare</span>
+              </button>
+            )}
+
             {/* Multi-Document Selection Dropdown (Section 8) */}
             {documents.length > 0 && (
               <div className="relative">
@@ -795,6 +823,47 @@ export function ChatPanel({
                       </button>
                     </div>
                   </div>
+                )}
+              </div>
+            )}
+
+            {/* In-chat Message Search Input & Toggle */}
+            {messages.length > 0 && (
+              <div className="relative flex items-center">
+                {showSearch ? (
+                  <div className="flex items-center gap-1 px-2 py-1 rounded-lg border border-[#3c8b7e] bg-[#f8fbfa] shadow-2xs">
+                    <Search className="w-3 h-3 text-[#3c8b7e]" />
+                    <input
+                      type="text"
+                      value={chatSearch}
+                      onChange={(e) => setChatSearch(e.target.value)}
+                      placeholder="Search messages…"
+                      className="text-xs bg-transparent focus:outline-none w-24 sm:w-36 text-[#183237]"
+                      autoFocus
+                    />
+                    <button
+                      onClick={() => {
+                        setShowSearch(false);
+                        setChatSearch('');
+                      }}
+                      className="p-0.5 text-[#5e7a76] hover:text-[#183237] rounded cursor-pointer"
+                      title="Close search"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setShowSearch(true)}
+                    className={`p-1.5 rounded-lg border text-xs font-semibold transition cursor-pointer ${
+                      chatSearch
+                        ? 'border-[#3c8b7e] bg-[#e8f4f1] text-[#1c4e48]'
+                        : 'border-[#d4e0dd] hover:border-[#9bbcb6] bg-white text-[#5e7a76] hover:text-[#183237]'
+                    }`}
+                    title="Search messages in this chat"
+                  >
+                    <Search className="w-3.5 h-3.5" />
+                  </button>
                 )}
               </div>
             )}
@@ -885,6 +954,27 @@ export function ChatPanel({
                 ))}
               </div>
 
+              <div className="flex flex-wrap items-center justify-center gap-2 mb-6">
+                {activeDoc && onOpenStudyModal && (
+                  <button
+                    onClick={() => onOpenStudyModal(activeDoc)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#3c8b7e]/30 bg-[#e8f4f1] text-[#1c4e48] hover:bg-[#d8ece7] text-xs font-semibold transition cursor-pointer shadow-2xs"
+                  >
+                    <BookOpen className="w-3.5 h-3.5 text-[#3c8b7e]" />
+                    <span>Study {activeDoc.name}</span>
+                  </button>
+                )}
+                {docsToSearch.length > 1 && onOpenCompare && (
+                  <button
+                    onClick={onOpenCompare}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#3c8b7e]/30 bg-[#e8f4f1] text-[#1c4e48] hover:bg-[#d8ece7] text-xs font-semibold transition cursor-pointer shadow-2xs"
+                  >
+                    <SlidersHorizontal className="w-3.5 h-3.5 text-[#3c8b7e]" />
+                    <span>Compare Selected ({docsToSearch.length})</span>
+                  </button>
+                )}
+              </div>
+
               {documents.length === 0 && onUploadClick && (
                 <div className="pt-2">
                   <button
@@ -898,8 +988,19 @@ export function ChatPanel({
             </div>
           ) : (
             <div className="max-w-3xl mx-auto space-y-6">
-              {messages.map((msg, idx) => {
-                const isLastAssistant = msg.role === 'assistant' && idx === messages.length - 1;
+              {chatSearch.trim() && displayedMessages.length === 0 ? (
+                <div className="text-center py-10 text-xs text-[#5e7a76] bg-white border border-[#e2ece9] rounded-2xl p-6 shadow-2xs">
+                  <p className="font-semibold text-[#183237] mb-1">No messages found matching &quot;{chatSearch}&quot;</p>
+                  <button
+                    onClick={() => setChatSearch('')}
+                    className="mt-2 text-[#3c8b7e] font-semibold hover:underline cursor-pointer"
+                  >
+                    Clear search filter
+                  </button>
+                </div>
+              ) : (
+                displayedMessages.map((msg, idx) => {
+                  const isLastAssistant = msg.role === 'assistant' && idx === displayedMessages.length - 1;
 
                 return (
                   <div
@@ -1073,7 +1174,7 @@ export function ChatPanel({
                     </div>
                   </div>
                 );
-              })}
+              }))}
 
               {/* Busy state */}
               {busy && (

@@ -7,8 +7,6 @@ import {
   X,
   FileText,
   MessageSquare,
-  Tag,
-  PlusCircle,
 } from 'lucide-react';
 import { useAuth } from '../lib/auth-context';
 import {

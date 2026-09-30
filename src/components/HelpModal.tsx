@@ -15,7 +15,6 @@ import {
   Send,
   Sparkles,
   AlertCircle,
-  Layers,
   HelpCircle as QuestionIcon,
   LifeBuoy,
   Lock,

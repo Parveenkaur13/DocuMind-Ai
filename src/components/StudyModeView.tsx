@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   GraduationCap,
   Sparkles,
-  BookOpen,
   HelpCircle,
   Layers,
   Award,
