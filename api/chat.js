@@ -37,7 +37,7 @@ ${question}
 
 ANSWER:`;
 
-    const answer = await callGeminiApi(prompt, 1800);
+    const answer = await callGeminiApi(prompt, 1800, req);
     return res.status(200).json({
       answer,
       citations,

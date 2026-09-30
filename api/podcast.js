@@ -17,7 +17,7 @@ export default async function handler(req, res) {
     const filename = body.filename || 'document';
 
     if (!text || text.length < 20) {
-      return res.status(400).json({ error: 'Document text is required and must contain at least 20 characters.' });
+      return res.status(400).json({ error: 'Document text is required and must contain at least 20 readable characters.' });
     }
 
     const prompt = `You are a dynamic podcast producer creating a 2-host audio overview (similar to Google NotebookLM).
@@ -45,7 +45,7 @@ ${text.slice(0, 7000)}
 
 JSON ARRAY:`;
 
-    const raw = await callGeminiApi(prompt, 1800);
+    const raw = await callGeminiApi(prompt, 1800, req);
     const parsed = extractJsonArray(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
       const dialogue = parsed.map((item) => ({

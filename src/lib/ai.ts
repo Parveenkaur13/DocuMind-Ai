@@ -640,57 +640,114 @@ export function getActiveGeminiApiKey(): string {
     const customKey = localStorage.getItem('documind_custom_gemini_key');
     if (customKey && customKey.trim().length > 10) return customKey.trim();
   }
-  const env = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env : (process.env as Record<string, string | undefined>);
-  return env?.VITE_GEMINI_API_KEY || env?.GEMINI_API_KEY || '';
+  return '';
+}
+
+export function createTimeoutSignal(ms: number): AbortSignal | undefined {
+  if (typeof AbortSignal !== 'undefined') {
+    if (typeof AbortSignal.timeout === 'function') {
+      return AbortSignal.timeout(ms);
+    }
+    const controller = new AbortController();
+    setTimeout(() => {
+      try {
+        controller.abort(new Error(`Request timed out after ${Math.round(ms / 1000)} seconds.`));
+      } catch {
+        // ignore
+      }
+    }, ms);
+    return controller.signal;
+  }
+  return undefined;
+}
+
+export function getApiHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  const customKey = getActiveGeminiApiKey();
+  if (customKey) {
+    headers['Authorization'] = `Bearer ${customKey}`;
+  }
+  return headers;
 }
 
 export function getBackendBaseUrl(): string {
   const envUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BACKEND_URL) || '';
 
   if (typeof window !== 'undefined') {
-    // If the web application is served over HTTPS, avoid insecure http:// requests which are blocked as mixed-content by mobile browsers
-    if (window.location.protocol === 'https:' && typeof envUrl === 'string' && envUrl.startsWith('http://')) {
+    const hostname = window.location.hostname;
+    const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
+
+    // If client is on a non-localhost host (mobile device, LAN access, or production Vercel deployment),
+    // NEVER point to localhost:8000 because that targets the mobile device itself!
+    if (!isLocalhost) {
+      if (
+        envUrl &&
+        typeof envUrl === 'string' &&
+        envUrl.trim().length > 0 &&
+        !envUrl.includes('localhost') &&
+        !envUrl.includes('127.0.0.1')
+      ) {
+        return envUrl.trim().replace(/\/+$/, '');
+      }
+      // Same-origin relative URLs (/api/...) work seamlessly across production Vercel and mobile browsers
       return '';
     }
-    // If client is on mobile / remote host (hostname is not localhost) and envUrl points to localhost,
-    // we must use relative path '' so requests target the host server rather than attempting to connect to port 8000 on the mobile device itself.
-    if (
-      window.location.hostname !== 'localhost' &&
-      window.location.hostname !== '127.0.0.1' &&
-      typeof envUrl === 'string' &&
-      envUrl.includes('localhost')
-    ) {
-      return '';
-    }
-    if (envUrl && typeof envUrl === 'string' && envUrl.trim().length > 0 && !envUrl.includes('localhost')) {
+
+    // On localhost desktop:
+    if (envUrl && typeof envUrl === 'string' && envUrl.trim().length > 0) {
       return envUrl.trim().replace(/\/+$/, '');
     }
-    // By default in browser environments, relative '' routes directly to /api/... on the same origin.
-    // In dev: Vite proxies /api to http://127.0.0.1:8000
-    // In production: Vercel routes /api to serverless functions in /api/
     return '';
   }
 
-  return envUrl || 'http://127.0.0.1:8000';
+  return 'http://127.0.0.1:8000';
 }
 
 export function formatAIError(err: unknown, docName: string, featureName: string): string {
-  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+  // Only show offline warning if navigator explicitly reports offline
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
     return 'You appear to be offline. Please check your internet connection.';
   }
+
   const msg = err instanceof Error ? err.message : String(err || '');
+
   if (msg.includes('TimeoutError') || msg.includes('AbortError') || msg.includes('timed out')) {
     return `${featureName} generation timed out. Please try again.`;
   }
   if (msg.includes('rate limit') || msg.includes('quota') || msg.includes('429')) {
-    return 'Google Gemini API rate limit or quota exceeded. Please wait a moment and try again.';
+    return 'Google Gemini API rate limit or quota exceeded (HTTP 429). Please wait a moment and try again.';
   }
-  if (msg.includes('401') || msg.includes('403') || msg.includes('authentication failed') || msg.includes('API key is not configured')) {
-    return 'Gemini API authentication failed or key is missing. Please verify your API key in Settings or Vercel environment variables.';
+  if (
+    msg.includes('GEMINI_API_KEY is not configured') ||
+    msg.includes('API key is not configured') ||
+    msg.includes('missing or empty')
+  ) {
+    return 'Gemini API key is not configured on the production server. Please configure GEMINI_API_KEY in your Vercel project environment variables.';
   }
-  if (msg.includes('does not contain enough text') || msg.includes('no extracted text')) {
-    return `"${docName}" does not contain enough readable text for ${featureName.toLowerCase()}.`;
+  if (
+    msg.includes('API key is invalid') ||
+    msg.includes('API key not valid') ||
+    msg.includes('API_KEY_INVALID') ||
+    msg.includes('authentication failed') ||
+    msg.includes('401') ||
+    msg.includes('403')
+  ) {
+    return 'Google Gemini API key authentication failed. Please check your Gemini API key in Settings or Vercel environment variables.';
   }
+  if (
+    msg.includes('does not contain enough readable text') ||
+    msg.includes('does not contain enough text') ||
+    msg.includes('insufficient extracted text') ||
+    msg.includes('no extracted text')
+  ) {
+    return `"${docName}" does not contain enough readable text for ${featureName.toLowerCase()}. Please re-upload or select another document.`;
+  }
+  if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('ECONNREFUSED')) {
+    return `Unable to reach the DocuMind API server for ${featureName.toLowerCase()}. Please check your connection or server status.`;
+  }
+
   return msg || `Unable to generate ${featureName.toLowerCase()} for "${docName}".`;
 }
 
@@ -919,13 +976,10 @@ export async function callGemini(
   const models = [
     preferredModel,
     'gemini-3.5-flash-lite',
-    'gemini-flash-latest',
     'gemini-3.8-flash',
-    'gemini-3.6-flash',
     'gemini-3.5-flash',
     'gemini-3.1-flash-lite',
-    'gemini-flash-lite-latest',
-    'gemini-3-flash-preview',
+    'gemini-flash-latest',
   ];
 
   const uniqueModels = Array.from(new Set(models));
@@ -953,6 +1007,7 @@ export async function callGemini(
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        signal: createTimeoutSignal(25000),
       });
 
       if (response.status === 429) {
@@ -1068,9 +1123,9 @@ Politely inform the user that their uploaded documents do not contain informatio
     const backendUrl = getBackendBaseUrl();
     const res = await fetch(`${backendUrl}/api/chat`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getApiHeaders(),
       body: JSON.stringify({ question, context, citations, mode }),
-      signal: AbortSignal.timeout(30000),
+      signal: createTimeoutSignal(30000),
     });
       if (res.ok) {
         const data = await res.json();
@@ -1644,13 +1699,13 @@ export async function generateFlashcardsAI(
   try {
     const res = await fetch(`${baseUrl}/api/flashcards`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getApiHeaders(),
       body: JSON.stringify({
         text: cleanText.slice(0, 14000),
         filename: docName,
         count,
       }),
-      signal: AbortSignal.timeout(45000),
+      signal: createTimeoutSignal(45000),
     });
 
     if (res.ok) {
@@ -1740,13 +1795,13 @@ export async function generateQuizAI(
   try {
     const res = await fetch(`${baseUrl}/api/quiz`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getApiHeaders(),
       body: JSON.stringify({
         text: cleanText.slice(0, 14000),
         filename: docName,
         count,
       }),
-      signal: AbortSignal.timeout(45000),
+      signal: createTimeoutSignal(45000),
     });
 
     if (res.ok) {
@@ -1855,12 +1910,12 @@ export async function generatePodcastAI(docText: string, docName: string): Promi
   try {
     const res = await fetch(`${baseUrl}/api/podcast`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getApiHeaders(),
       body: JSON.stringify({
         text: cleanText.slice(0, 10000),
         filename: docName,
       }),
-      signal: AbortSignal.timeout(45000),
+      signal: createTimeoutSignal(45000),
     });
 
     if (res.ok) {
@@ -1965,14 +2020,14 @@ export async function generateStudyMaterialAI(
   try {
     const res = await fetch(`${baseUrl}/api/study`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getApiHeaders(),
       body: JSON.stringify({
         text: cleanText.slice(0, 16000),
         filename: docName,
         type,
         difficulty,
       }),
-      signal: AbortSignal.timeout(45000),
+      signal: createTimeoutSignal(45000),
     });
 
     if (res.ok) {

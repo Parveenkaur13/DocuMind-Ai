@@ -21,7 +21,7 @@ export default async function handler(req, res) {
     }
 
     const prompt = `Provide a concise 2-3 sentence executive summary of the document '${filename}':\n\n${text.slice(0, 6000)}`;
-    const summary = await callGeminiApi(prompt, 400);
+    const summary = await callGeminiApi(prompt, 400, req);
     return res.status(200).json({ summary });
   } catch (error) {
     console.error('[API /api/summarize Error]:', error);

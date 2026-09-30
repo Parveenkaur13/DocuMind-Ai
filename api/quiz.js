@@ -18,7 +18,7 @@ export default async function handler(req, res) {
     const count = parseInt(body.count || 10, 10);
 
     if (!text || text.length < 20) {
-      return res.status(400).json({ error: 'Document text is required and must contain at least 20 characters.' });
+      return res.status(400).json({ error: 'Document text is required and must contain at least 20 readable characters.' });
     }
 
     const prompt = `You are a certified university exam creator. Formulate ${count} challenging, high-yield multiple-choice questions based strictly on "${filename}".
@@ -42,7 +42,7 @@ ${text.slice(0, 9000)}
 
 JSON ARRAY:`;
 
-    const raw = await callGeminiApi(prompt, 2600);
+    const raw = await callGeminiApi(prompt, 2600, req);
     const parsed = extractJsonArray(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
       const formatted = parsed.map((item, idx) => {

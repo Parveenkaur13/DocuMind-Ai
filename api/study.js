@@ -19,7 +19,7 @@ export default async function handler(req, res) {
     const difficulty = body.difficulty || 'intermediate';
 
     if (!text || text.length < 20) {
-      return res.status(400).json({ error: 'Document text is required and must contain at least 20 characters.' });
+      return res.status(400).json({ error: 'Document text is required and must contain at least 20 readable characters.' });
     }
 
     const diffInstructions = {
@@ -108,7 +108,7 @@ ${text.slice(0, 10000)}
 
 STUDY MATERIAL:`;
 
-    const result = await callGeminiApi(fullPrompt, 2400);
+    const result = await callGeminiApi(fullPrompt, 2400, req);
     return res.status(200).json({ result });
   } catch (error) {
     console.error('[API /api/study Error]:', error);

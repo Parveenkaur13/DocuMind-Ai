@@ -989,16 +989,16 @@ export function StudyModeView({
                 </div>
 
                 {/* Controls */}
-                <div className="flex items-center justify-between gap-2.5">
+                <div className="flex items-center justify-between gap-1.5 sm:gap-2.5 flex-wrap">
                   <button
                     onClick={() => {
                       setIsFlipped(false);
                       setCardIndex((prev) => (prev > 0 ? prev - 1 : currentFlashcards.length - 1));
                     }}
-                    className="px-4 py-2 rounded-xl bg-white border border-[#d4e0dd] text-xs font-semibold hover:border-[#3c8b7e] transition flex items-center gap-1 cursor-pointer"
+                    className="px-2.5 sm:px-4 py-2 rounded-xl bg-white border border-[#d4e0dd] text-xs font-semibold hover:border-[#3c8b7e] transition flex items-center gap-1 cursor-pointer flex-1 sm:flex-initial justify-center"
                   >
                     <ChevronLeft className="w-4 h-4" />
-                    <span>Previous</span>
+                    <span>Prev</span>
                   </button>
 
                   <button
@@ -1011,13 +1011,13 @@ export function StudyModeView({
                         return next;
                       });
                     }}
-                    className={`px-4 py-2 rounded-xl text-xs font-semibold transition cursor-pointer ${
+                    className={`px-2.5 sm:px-4 py-2 rounded-xl text-xs font-semibold transition cursor-pointer flex-1 sm:flex-initial text-center justify-center ${
                       masteredIds.has(currentFlashcards[cardIndex].id)
                         ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                         : 'bg-white border border-[#d4e0dd] text-[#183237] hover:border-[#3c8b7e]'
                     }`}
                   >
-                    {masteredIds.has(currentFlashcards[cardIndex].id) ? '✓ Marked Mastered' : 'Mark as Mastered'}
+                    {masteredIds.has(currentFlashcards[cardIndex].id) ? '✓ Mastered' : 'Mark Mastered'}
                   </button>
 
                   <button
@@ -1026,7 +1026,7 @@ export function StudyModeView({
                       setIsFlipped(false);
                       setMasteredIds(new Set());
                     }}
-                    className="p-2 rounded-xl bg-white border border-[#d4e0dd] text-xs font-semibold hover:border-[#3c8b7e] transition text-[#5e7a76] hover:text-[#183237] cursor-pointer"
+                    className="p-2 rounded-xl bg-white border border-[#d4e0dd] text-xs font-semibold hover:border-[#3c8b7e] transition text-[#5e7a76] hover:text-[#183237] cursor-pointer flex-shrink-0"
                     title="Reset flashcard progress"
                   >
                     <RotateCcw className="w-4 h-4" />
@@ -1037,7 +1037,7 @@ export function StudyModeView({
                       setIsFlipped(false);
                       setCardIndex((prev) => (prev < currentFlashcards.length - 1 ? prev + 1 : 0));
                     }}
-                    className="px-4 py-2 rounded-xl bg-[#1c4e48] text-white text-xs font-semibold hover:bg-[#163d38] transition flex items-center gap-1 cursor-pointer shadow-xs"
+                    className="px-2.5 sm:px-4 py-2 rounded-xl bg-[#1c4e48] text-white text-xs font-semibold hover:bg-[#163d38] transition flex items-center gap-1 cursor-pointer shadow-xs flex-1 sm:flex-initial justify-center"
                   >
                     <span>Next</span>
                     <ChevronRight className="w-4 h-4" />
