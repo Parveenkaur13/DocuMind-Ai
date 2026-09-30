@@ -158,7 +158,7 @@ export function StudyModeView({
       setQuizError(null);
       setPodcastError(null);
     }
-  }, [selectedDoc?.id]);
+  }, [selectedDoc?.id, activeDocId]);
 
   // Handle document switch from dropdown or selection card
   const handleDocumentChange = (docId: string) => {
@@ -331,7 +331,7 @@ export function StudyModeView({
     } else {
       fetchTextMaterial(activeTab as StudyMaterialType, false);
     }
-  }, [activeTab, currentDoc?.id, difficulty, fetchFlashcards, fetchQuiz, fetchPodcast, fetchTextMaterial]);
+  }, [activeTab, currentDoc, difficulty, fetchFlashcards, fetchQuiz, fetchPodcast, fetchTextMaterial]);
 
   // Audio Speech Synthesis for Podcast
   const stopPodcastAudio = () => {
