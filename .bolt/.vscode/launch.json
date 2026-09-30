@@ -1,22 +1,28 @@
 {
-    // Use IntelliSense to learn about possible attributes.
-    // Hover to view descriptions of existing attributes.
-    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
-    "version": "0.2.0",
-    "configurations": [
-        {
-            "type": "chrome",
-            "request": "launch",
-            "name": "Launch Chrome against localhost",
-            "url": "http://localhost:5173",
-            "webRoot": "${workspaceFolder}"
-        },
-        {
-            "type": "node",
-            "request": "launch",
-            "name": "DocuMind Backend Server",
-            "program": "${workspaceFolder}/backend/run.js",
-            "console": "integratedTerminal"
-        }
-    ]
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "chrome",
+      "request": "launch",
+      "name": "Launch Chrome against localhost",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}",
+      "userDataDir": "${env:TEMP}/documind-chrome-debug"
+    },
+    {
+      "type": "msedge",
+      "request": "launch",
+      "name": "Launch Edge against localhost",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}",
+      "userDataDir": "${env:TEMP}/documind-edge-debug"
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "DocuMind Backend Server",
+      "program": "${workspaceFolder}/backend/run.js",
+      "console": "integratedTerminal"
+    }
+  ]
 }

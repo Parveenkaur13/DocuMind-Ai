@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { supabase } from './supabase';
+import { supabase, isSupabaseConfigured } from './supabase';
 import { AuthContext, type AuthContextValue } from './auth-context';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -13,15 +13,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return true;
     }
   });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => isSupabaseConfigured);
 
   useEffect(() => {
+    if (!isSupabaseConfigured) {
+      setLoading(false);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setLoading(false);
+    }, 1500);
+
     supabase.auth.getSession()
       .then(({ data }) => {
+        clearTimeout(timer);
         setSession(data.session);
         setLoading(false);
       })
       .catch(() => {
+        clearTimeout(timer);
         setLoading(false);
       });
 

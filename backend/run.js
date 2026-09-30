@@ -24,14 +24,34 @@ if (!pythonExe) {
   pythonExe = 'py';
 }
 
-const serverScript = path.join(__dirname, 'server.py');
-console.log(`Starting DocuMind backend using: ${pythonExe}`);
+import http from 'http';
 
-const child = spawn(pythonExe, [serverScript], {
-  stdio: 'inherit',
-  shell: true,
-});
+function checkAlreadyRunning() {
+  return new Promise((resolve) => {
+    const req = http.get('http://127.0.0.1:8000/api/health', (res) => {
+      resolve(res.statusCode === 200);
+    });
+    req.on('error', () => resolve(false));
+    req.setTimeout(1000, () => {
+      req.destroy();
+      resolve(false);
+    });
+  });
+}
 
-child.on('exit', (code) => {
-  process.exit(code || 0);
-});
+const isRunning = await checkAlreadyRunning();
+if (isRunning) {
+  console.log('DocuMind backend is ALREADY running and active at http://localhost:8000');
+  console.log('Ready to receive requests! Press Ctrl+C to close.');
+  setInterval(() => {}, 60000);
+} else {
+  console.log(`Starting DocuMind backend using: ${pythonExe}`);
+  const child = spawn(pythonExe, [serverScript], {
+    stdio: 'inherit',
+    shell: true,
+  });
+
+  child.on('exit', (code) => {
+    process.exit(code || 0);
+  });
+}

@@ -147,7 +147,7 @@ export function StudyModeView({
         .finally(() => setLoadingCards(false));
     } else if (activeTab === 'mcq' && quizQuestions.length === 0) {
       setLoadingQuiz(true);
-      generateQuizAI(currentDoc.extracted_text, currentDoc.name)
+      generateQuizAI(currentDoc.extracted_text, currentDoc.name, 10)
         .then((qs) => setQuizQuestions(qs))
         .catch(() => showToast('Failed to load MCQs', 'error'))
         .finally(() => setLoadingQuiz(false));
@@ -363,18 +363,16 @@ export function StudyModeView({
           </div>
         </div>
 
-        {/* Study Navigation Tabs */}
+        {/* Study Navigation Tabs (Section 9) */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
           {[
             { id: 'summary', label: 'Summary', icon: Sparkles },
             { id: 'short_notes', label: 'Short Notes', icon: FileText },
-            { id: 'important_questions', label: 'Important Questions', icon: HelpCircle },
-            { id: 'mcq', label: 'MCQs & Quizzes', icon: CheckCircle2 },
+            { id: 'mcq', label: 'MCQs', icon: CheckCircle2 },
             { id: 'flashcards', label: 'Flashcards', icon: Layers },
             { id: 'viva_questions', label: 'Viva Questions', icon: MessageSquare },
-            { id: 'exam_questions', label: 'Exam Questions', icon: BookOpen },
-            { id: 'key_concepts', label: 'Key Concepts', icon: Award },
-            { id: 'explain_beginner', label: 'Beginner Guide', icon: GraduationCap },
+            { id: 'important_questions', label: 'Important Questions', icon: HelpCircle },
+            { id: 'explain_beginner', label: 'Explain Topic', icon: GraduationCap },
             { id: 'podcast', label: 'Audio Podcast', icon: Headphones },
           ].map((tab) => {
             const TabIcon = tab.icon;
@@ -512,13 +510,38 @@ export function StudyModeView({
           </div>
         )}
 
-        {/* TAB 2: Multiple Choice Questions (MCQ) Viewer */}
+        {/* TAB 2: Multiple Choice Questions (MCQ) Viewer (Section 9) */}
         {activeTab === 'mcq' && (
           <div className="max-w-2xl mx-auto space-y-6">
+            <div className="flex items-center justify-between bg-white p-3 rounded-xl border border-[#e2ece9]">
+              <span className="text-xs font-bold text-[#183237]">
+                Multiple-Choice Questions ({quizQuestions.length})
+              </span>
+              <button
+                onClick={() => {
+                  if (!currentDoc?.extracted_text) return;
+                  setLoadingQuiz(true);
+                  setSelectedAnswers({});
+                  generateQuizAI(currentDoc.extracted_text, currentDoc.name, 10)
+                    .then((qs) => {
+                      setQuizQuestions(qs);
+                      showToast(`Generated ${qs.length} MCQs`, 'success');
+                    })
+                    .catch(() => showToast('Failed to load MCQs', 'error'))
+                    .finally(() => setLoadingQuiz(false));
+                }}
+                disabled={loadingQuiz}
+                className="px-3 py-1.5 rounded-lg bg-[#1c4e48] text-white hover:bg-[#163d38] text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 text-[#7dd3c4]" />
+                <span>Regenerate 10 MCQs</span>
+              </button>
+            </div>
+
             {loadingQuiz ? (
               <div className="p-16 text-center bg-white rounded-3xl border border-[#e2ece9] shadow-sm space-y-3">
                 <Loader2 className="w-8 h-8 text-[#3c8b7e] animate-spin mx-auto" />
-                <p className="text-xs text-[#5e7a76]">Generating multiple-choice evaluation questions…</p>
+                <p className="text-xs text-[#5e7a76]">Generating 10 multiple-choice questions with explanations…</p>
               </div>
             ) : quizQuestions.length === 0 ? (
               <div className="p-8 text-center bg-white rounded-3xl border border-[#e2ece9]">

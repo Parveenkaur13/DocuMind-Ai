@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   AlertCircle,
   UploadCloud,
-  Sparkles,
 } from 'lucide-react';
 import { splitIntoChunks, generateSummary, generateAISummary } from '../lib/ai';
 import { saveDocument } from '../lib/db';
@@ -34,31 +33,13 @@ interface UploadItem {
 }
 
 function formatBytes(bytes: number): string {
+  if (!bytes) return '0 KB';
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / 1048576).toFixed(1)} MB`;
 }
 
-// Convert CSV into structured RAG-friendly rows
-function formatCSVForRAG(csvText: string): string {
-  const lines = csvText.split(/\r?\n/).filter((l) => l.trim().length > 0);
-  if (lines.length <= 1) return csvText;
-
-  const headers = lines[0].split(',').map((h) => h.replace(/^["']|["']$/g, '').trim());
-  const rows: string[] = [`CSV Table: Headers [${headers.join(' | ')}]`];
-
-  for (let i = 1; i < lines.length; i++) {
-    const cells = lines[i].split(',').map((c) => c.replace(/^["']|["']$/g, '').trim());
-    const rowStr = headers
-      .map((header, colIdx) => `${header}: ${cells[colIdx] ?? 'N/A'}`)
-      .join(' | ');
-    rows.push(rowStr);
-  }
-
-  return rows.join('\n');
-}
-
-// High-accuracy text extractor supporting PDF, DOCX, CSV, JSON, MD, TXT
+// High-accuracy text extractor supporting PDF, DOCX, and TXT (Section 5 & 18)
 async function extractTextFromFile(file: File): Promise<string> {
   const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
 
@@ -113,37 +94,7 @@ async function extractTextFromFile(file: File): Promise<string> {
     return `[Document: ${file.name}]\nFile format: PDF (${formatBytes(file.size)}).\nIndexed for conversational RAG queries.`;
   }
 
-  // 2. CSV Table Formatter for RAG
-  if (ext === 'csv') {
-    const raw = await file.text();
-    return formatCSVForRAG(raw);
-  }
-
-  // 3. JSON Formatter
-  if (ext === 'json') {
-    try {
-      const raw = await file.text();
-      const parsed = JSON.parse(raw);
-      return JSON.stringify(parsed, null, 2);
-    } catch {
-      return await file.text();
-    }
-  }
-
-  // 4. Standard text, markdown, log, code files
-  if (
-    ['txt', 'md', 'log', 'yaml', 'yml', 'xml', 'html', 'css', 'js', 'ts', 'jsx', 'tsx'].includes(
-      ext,
-    )
-  ) {
-    const raw = await file.text();
-    return raw
-      // eslint-disable-next-line no-control-regex
-      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\uFFFD]/g, '')
-      .trim();
-  }
-
-  // 5. DOCX Extraction via Mammoth
+  // 2. DOCX Extraction via Mammoth
   if (ext === 'docx' || ext === 'doc') {
     try {
       const arrayBuffer = await file.arrayBuffer();
@@ -157,20 +108,12 @@ async function extractTextFromFile(file: File): Promise<string> {
     }
   }
 
-  // 6. Generic binary fallback (strictly prevent binary zip garbage)
-  try {
-    const raw = await file.text();
-    if (raw.startsWith('PK') && (raw.includes('[Content_Types].xml') || raw.includes('word/'))) {
-      const cleanTitle = file.name.replace(/[-_.]+/g, ' ').replace(/\s+(docx|pdf|txt|doc)$/i, '');
-      return `[Document: ${file.name}]\nTitle: ${cleanTitle}\nIndexed for conversational RAG queries. You can ask DocuMind questions regarding this document.`;
-    }
+  // 3. Plain text / Markdown
+  const raw = await file.text();
+  return raw
     // eslint-disable-next-line no-control-regex
-    const clean = raw.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\uFFFD]/g, '').trim();
-    if (clean.length > 10) return clean;
-    return `[Document: ${file.name}] (${formatBytes(file.size)})`;
-  } catch {
-    return `[Document: ${file.name}] (${formatBytes(file.size)})`;
-  }
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\uFFFD]/g, '')
+    .trim();
 }
 
 export function UploadModal({ open, onClose, onUploaded }: UploadModalProps) {
@@ -187,7 +130,6 @@ export function UploadModal({ open, onClose, onUploaded }: UploadModalProps) {
     }
   }, [open]);
 
-  // Handle Escape key to close
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && open) {
@@ -202,21 +144,51 @@ export function UploadModal({ open, onClose, onUploaded }: UploadModalProps) {
     const arr = Array.from(files);
     if (!arr.length) return;
 
-    const newItems: UploadItem[] = arr.map((file) => ({
-      id: crypto.randomUUID(),
-      file,
-      status: 'reading' as const,
-      stepMsg: 'Reading and parsing file contents…',
-    }));
+    const allowedExtensions = ['pdf', 'docx', 'doc', 'txt'];
+
+    const newItems: UploadItem[] = arr.map((file) => {
+      const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+      const isSupported = allowedExtensions.includes(ext);
+
+      return {
+        id: crypto.randomUUID(),
+        file,
+        status: isSupported ? ('reading' as const) : ('error' as const),
+        stepMsg: isSupported ? 'Uploading…' : 'Unsupported file type',
+        error: isSupported ? undefined : 'Unsupported file type. Please upload PDF, DOCX or TXT.',
+      };
+    });
+
     setItems((prev) => [...prev, ...newItems]);
 
     for (const item of newItems) {
-      try {
-        const extracted = await extractTextFromFile(item.file);
+      if (item.status === 'error') {
+        showToast('Unsupported file type. Please upload PDF, DOCX or TXT.', 'error');
+        continue;
+      }
 
+      try {
+        // Step 1: Uploading...
         setItems((prev) =>
           prev.map((it) =>
-            it.id === item.id ? { ...it, status: 'saving', stepMsg: 'Generating accurate AI summary…' } : it,
+            it.id === item.id ? { ...it, status: 'reading', stepMsg: 'Uploading…' } : it,
+          ),
+        );
+
+        // Step 2: Extracting text...
+        await new Promise((r) => setTimeout(r, 200));
+        setItems((prev) =>
+          prev.map((it) =>
+            it.id === item.id ? { ...it, status: 'reading', stepMsg: 'Extracting text…' } : it,
+          ),
+        );
+
+        const extracted = await extractTextFromFile(item.file);
+
+        // Step 3: Creating knowledge...
+        setItems((prev) =>
+          prev.map((it) =>
+            it.id === item.id ? { ...it, status: 'saving', stepMsg: 'Creating knowledge…' } : it,
           ),
         );
 
@@ -224,21 +196,15 @@ export function UploadModal({ open, onClose, onUploaded }: UploadModalProps) {
         try {
           summary = await generateAISummary(extracted, item.file.name);
         } catch {
-          // fallback to local summary
+          // fallback
         }
-
-        setItems((prev) =>
-          prev.map((it) =>
-            it.id === item.id ? { ...it, stepMsg: 'Building sliding-window semantic chunks…' } : it,
-          ),
-        );
 
         const chunks = splitIntoChunks(extracted, 450, 80);
 
         await saveDocument(
           {
             name: item.file.name,
-            file_type: item.file.name.split('.').pop() ?? 'txt',
+            file_type: item.file.name.split('.').pop()?.toLowerCase() ?? 'txt',
             file_size: item.file.size,
             extracted_text: extracted,
             summary,
@@ -247,13 +213,14 @@ export function UploadModal({ open, onClose, onUploaded }: UploadModalProps) {
           user?.id,
         );
 
+        // Step 4: Ready
         setItems((prev) =>
           prev.map((it) =>
-            it.id === item.id ? { ...it, status: 'done', stepMsg: 'Indexed & ready for AI search' } : it,
+            it.id === item.id ? { ...it, status: 'done', stepMsg: 'Ready' } : it,
           ),
         );
 
-        showToast(`Document "${item.file.name}" indexed with high precision!`, 'success');
+        showToast(`Document "${item.file.name}" indexed successfully!`, 'success');
       } catch (err) {
         setItems((prev) =>
           prev.map((it) =>
@@ -262,7 +229,7 @@ export function UploadModal({ open, onClose, onUploaded }: UploadModalProps) {
                   ...it,
                   status: 'error',
                   stepMsg: 'Failed to process',
-                  error: err instanceof Error ? err.message : 'Upload failed',
+                  error: err instanceof Error ? err.message : "We couldn't generate an answer right now. Please try again.",
                 }
               : it,
           ),
@@ -270,26 +237,8 @@ export function UploadModal({ open, onClose, onUploaded }: UploadModalProps) {
         showToast(`Failed to upload ${item.file.name}`, 'error');
       }
     }
+
     onUploaded();
-  };
-
-  // Sample quick load for testing
-  const loadSampleDocument = () => {
-    const sampleText = `Autonomous Intelligent Agents in Distributed Systems
-Abstract:
-Autonomous AI agents are increasingly deployed in decentralized networks for real-time task orchestration, decision making, and adaptive resource management. This paper investigates multi-agent coordination protocols under high-latency network conditions.
-
-Key Findings:
-1. Communication Overhead: Peer-to-peer consensus reduces central bottlenecks by 42% compared to master-worker architectures.
-2. Latency Tolerance: Event-driven actor models exhibit 99.4% task completion rates even when packet drop rates exceed 15%.
-3. Security: Cryptographic identity binding eliminates sybil vulnerabilities in open agent swarms.
-
-Conclusions:
-The proposed decentralized consensus framework provides robust guarantees for multi-agent systems operating in unpredictable environments.`;
-
-    const blob = new Blob([sampleText], { type: 'text/markdown' });
-    const sampleFile = new File([blob], 'Autonomous_Agents_Research.md', { type: 'text/markdown' });
-    handleFiles([sampleFile]);
   };
 
   if (!open) return null;
@@ -302,7 +251,7 @@ The proposed decentralized consensus framework provides robust guarantees for mu
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden border border-[#d4e0dd] animate-rise"
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden border border-[#d4e0dd]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -312,13 +261,13 @@ The proposed decentralized consensus framework provides robust guarantees for mu
               <UploadCloud className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="display text-base font-bold text-[#183237]">Upload Documents</h3>
-              <p className="text-xs text-[#5e7a76]">Accurate semantic parsing for PDF, DOCX, CSV & Text</p>
+              <h3 className="text-base font-bold text-[#183237]">Upload Documents</h3>
+              <p className="text-xs text-[#5e7a76]">Upload PDF, DOCX or TXT to index into knowledge base</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-[#5e7a76] hover:text-[#183237] hover:bg-[#f0f4f3] transition"
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-[#5e7a76] hover:text-[#183237] hover:bg-[#f0f4f3] transition cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -349,25 +298,24 @@ The proposed decentralized consensus framework provides robust guarantees for mu
               ref={inputRef}
               type="file"
               multiple
-              accept=".txt,.md,.csv,.json,.pdf,.docx,.doc"
+              accept=".pdf,.docx,.txt"
               className="hidden"
               onChange={(e) => {
                 if (e.target.files?.length) handleFiles(e.target.files);
               }}
             />
-            <div className="w-12 h-12 rounded-2xl bg-[#e8f4f1] text-[#3c8b7e] flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
+            <div className="w-12 h-12 rounded-2xl bg-[#e8f4f1] text-[#3c8b7e] flex items-center justify-center mx-auto mb-3 group-hover:scale-105 transition-transform">
               <UploadCloud className="w-6 h-6" />
             </div>
             <p className="text-sm font-bold text-[#183237]">
               Drag and drop files here, or <span className="text-[#3c8b7e] underline">browse</span>
             </p>
-            <p className="text-xs text-[#5e7a76] mt-1.5">
-              Supports PDF, DOCX, TXT, MD, CSV, JSON (Up to 50MB)
+            <p className="text-xs text-[#5e7a76] mt-1">
+              Supports PDF, DOCX, TXT
             </p>
 
-            {/* Format Pills */}
             <div className="flex items-center justify-center gap-1.5 mt-3">
-              {['PDF', 'DOCX', 'TXT', 'MD', 'CSV', 'JSON'].map((fmt) => (
+              {['PDF', 'DOCX', 'TXT'].map((fmt) => (
                 <span
                   key={fmt}
                   className="px-2 py-0.5 rounded-md bg-white border border-[#e2ece9] text-[10px] font-semibold text-[#5e7a76]"
@@ -378,36 +326,19 @@ The proposed decentralized consensus framework provides robust guarantees for mu
             </div>
           </div>
 
-          {/* Quick Demo Document Loader */}
-          {items.length === 0 && (
-            <div className="mt-4 p-3 rounded-xl bg-[#f8fbfa] border border-[#e8efed] flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-[#3c8b7e]" />
-                <span className="text-xs text-[#183237] font-medium">No file handy right now?</span>
-              </div>
-              <button
-                type="button"
-                onClick={loadSampleDocument}
-                className="text-xs font-semibold text-[#1c4e48] hover:text-[#3c8b7e] hover:underline"
-              >
-                + Add sample research paper
-              </button>
-            </div>
-          )}
-
-          {/* Processing Item List */}
+          {/* Processing Item List (Section 16: Simple progress state) */}
           {items.length > 0 && (
             <div className="mt-4 space-y-2 max-h-56 overflow-y-auto pr-1">
               {items.map((item) => (
                 <div
                   key={item.id}
-                  className="flex items-center gap-3 px-3.5 py-3 rounded-xl bg-[#f8fbfa] border border-[#e8efed] animate-rise shadow-2xs"
+                  className="flex items-center gap-3 px-3.5 py-3 rounded-xl bg-[#f8fbfa] border border-[#e8efed] shadow-2xs"
                 >
                   <div className="flex-shrink-0">
                     {item.status === 'done' ? (
-                      <CheckCircle2 className="w-5 h-5 text-[#3c8b7e]" />
+                      <CheckCircle2 className="w-5 h-5 text-emerald-600" />
                     ) : item.status === 'error' ? (
-                      <AlertCircle className="w-5 h-5 text-[#c0413b]" />
+                      <AlertCircle className="w-5 h-5 text-red-500" />
                     ) : (
                       <Loader2 className="w-5 h-5 text-[#3c8b7e] animate-spin" />
                     )}
@@ -417,8 +348,16 @@ The proposed decentralized consensus framework provides robust guarantees for mu
                     <div className="text-[11px] text-[#5e7a76] flex items-center gap-1.5 mt-0.5">
                       <span>{formatBytes(item.file.size)}</span>
                       <span>•</span>
-                      <span className={item.status === 'error' ? 'text-red-600 font-medium' : 'text-[#3c8b7e]'}>
-                        {item.stepMsg}
+                      <span
+                        className={
+                          item.status === 'done'
+                            ? 'text-emerald-700 font-semibold'
+                            : item.status === 'error'
+                            ? 'text-red-600 font-medium'
+                            : 'text-[#3c8b7e] font-medium'
+                        }
+                      >
+                        {item.error || item.stepMsg}
                       </span>
                     </div>
                   </div>
@@ -431,7 +370,7 @@ The proposed decentralized consensus framework provides robust guarantees for mu
           {allDone && (
             <button
               onClick={onClose}
-              className="w-full mt-5 py-2.5 rounded-xl bg-[#1c4e48] hover:bg-[#163d38] active:bg-[#0f2a26] text-white font-semibold transition text-sm shadow-sm"
+              className="w-full mt-5 py-2.5 rounded-xl bg-[#1c4e48] hover:bg-[#163d38] active:bg-[#0f2a26] text-white font-semibold transition text-xs shadow-sm cursor-pointer"
             >
               Done & Return to Workspace
             </button>

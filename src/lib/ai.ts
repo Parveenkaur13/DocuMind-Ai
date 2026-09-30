@@ -1480,8 +1480,9 @@ Generate a thorough comparative synthesis in valid JSON format:
   ],
   "dimensions": [
     {"dimension": "Purpose", "docA": "Primary purpose of Doc A", "docB": "Primary purpose of Doc B", "analysis": "Key distinction"},
+    {"dimension": "Topics", "docA": "Core topics and themes in Doc A", "docB": "Core topics and themes in Doc B", "analysis": "Topic domain alignment"},
     {"dimension": "Methodology", "docA": "Approach/methodology in Doc A", "docB": "Approach/methodology in Doc B", "analysis": "Methodological differences"},
-    {"dimension": "Technologies", "docA": "Technologies or tools in Doc A", "docB": "Technologies or tools in Doc B", "analysis": "Tech stack alignment"},
+    {"dimension": "Technology", "docA": "Technologies or tools in Doc A", "docB": "Technologies or tools in Doc B", "analysis": "Tech stack alignment"},
     {"dimension": "Dataset", "docA": "Data, metrics, or evidence in Doc A", "docB": "Data, metrics, or evidence in Doc B", "analysis": "Data scope comparison"},
     {"dimension": "Algorithms", "docA": "Techniques, rules, or algorithms in Doc A", "docB": "Techniques, rules, or algorithms in Doc B", "analysis": "Algorithmic comparison"},
     {"dimension": "Results", "docA": "Results and achievements in Doc A", "docB": "Results and achievements in Doc B", "analysis": "Performance comparison"},
@@ -1611,10 +1612,10 @@ JSON ARRAY:`;
 // -------------------------------------------------------------
 // 14. AI Study Suite: Multiple-Choice Quiz Generator
 // -------------------------------------------------------------
-export async function generateQuizAI(docText: string, docName: string): Promise<QuizQuestion[]> {
+export async function generateQuizAI(docText: string, docName: string, count: number = 10): Promise<QuizQuestion[]> {
   const geminiKey = getActiveGeminiApiKey();
   if (geminiKey && docText.length > 50) {
-    const prompt = `You are a certified exam creator. Formulate 4 challenging multiple-choice questions based on "${docName}".
+    const prompt = `You are a certified university exam creator. Formulate ${count} challenging, high-yield multiple-choice questions based strictly on "${docName}".
 Return ONLY a valid JSON array of objects with the exact schema:
 [
   {
@@ -1622,17 +1623,17 @@ Return ONLY a valid JSON array of objects with the exact schema:
     "question": "Question text here?",
     "options": ["Option A", "Option B", "Option C", "Option D"],
     "correctIndex": 0,
-    "explanation": "Why this option is correct based on the text."
+    "explanation": "Why this option is correct based strictly on the text."
   }
 ]
 
 DOCUMENT:
-${docText.slice(0, 3000)}
+${docText.slice(0, 4500)}
 
 JSON ARRAY:`;
 
     try {
-      const raw = await callGemini(prompt, geminiKey, 'gemini-3.5-flash-lite', 1600);
+      const raw = await callGemini(prompt, geminiKey, 'gemini-3.5-flash-lite', 2400);
       if (raw) {
         const cleaned = raw.replace(/```json/g, '').replace(/```/g, '').trim();
         const parsed = JSON.parse(cleaned);

@@ -498,3 +498,22 @@ export async function saveMessage(msg: ChatMessage, convId: string, userId?: str
     }
   }
 }
+
+/**
+ * Returns the actual count of user questions asked across all stored conversations.
+ * Does not fabricate or estimate statistics.
+ */
+export async function fetchTotalQuestionsCount(userId?: string | null): Promise<number> {
+  try {
+    const convs = await fetchConversations(userId);
+    let totalQuestions = 0;
+    for (const c of convs) {
+      const msgs = await fetchMessages(c.id, userId);
+      totalQuestions += msgs.filter((m) => m.role === 'user').length;
+    }
+    return totalQuestions;
+  } catch {
+    return 0;
+  }
+}
+

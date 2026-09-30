@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   Menu,
   UploadCloud,
@@ -6,6 +6,9 @@ import {
   Search,
   X,
   FileText,
+  MessageSquare,
+  Tag,
+  PlusCircle,
 } from 'lucide-react';
 import { useAuth } from '../lib/auth-context';
 import {
@@ -17,6 +20,7 @@ import {
   saveMessage,
   deleteDocument,
   deleteConversation,
+  fetchTotalQuestionsCount,
 } from '../lib/db';
 import { Sidebar, type DocItem, type ConvItem, type MainNavView } from './Sidebar';
 import { ChatPanel, type ChatMessage } from './ChatPanel';
@@ -24,9 +28,6 @@ import { DashboardView } from './DashboardView';
 import { DocumentsView } from './DocumentsView';
 import { StudyModeView } from './StudyModeView';
 import { CompareView } from './CompareView';
-import { KnowledgeMapView } from './KnowledgeMapView';
-import { PipelineView } from './PipelineView';
-import { EvaluationView } from './EvaluationView';
 import { UploadModal } from './UploadModal';
 import { SettingsModal } from './SettingsModal';
 import { HelpModal } from './HelpModal';
@@ -35,35 +36,23 @@ import { ToastProvider, useToast } from './Toast';
 const VIEW_TITLES: Record<MainNavView, { title: string; subtitle: string }> = {
   dashboard: {
     title: 'Dashboard',
-    subtitle: 'Intelligent Overview & Knowledge Metrics',
+    subtitle: 'Turn Your Documents Into Intelligence',
   },
   documents: {
-    title: 'Document Intelligence',
-    subtitle: 'Multi-Format Management, Extraction & Chunks',
+    title: 'Documents',
+    subtitle: 'Upload, manage, search, and inspect document knowledge',
   },
   chat: {
-    title: 'AI Chat & RAG',
-    subtitle: 'Zero-Hallucination Retrieval Grounded with Citations',
+    title: 'AI Chat (RAG)',
+    subtitle: 'Ask questions with verified grounded citations',
   },
   study: {
-    title: 'Study & Personalized Learning',
-    subtitle: 'Adaptive Notes, MCQs, Flashcards, Viva & Audio',
+    title: 'Study Mode',
+    subtitle: 'Personalized summaries, short notes, MCQs & flashcards',
   },
   compare: {
-    title: 'Document Comparison',
-    subtitle: '9-Dimensional Side-by-Side Architectural Analysis',
-  },
-  'knowledge-map': {
-    title: 'Knowledge Map',
-    subtitle: 'Topic Taxonomy & Extracted Entity Graph',
-  },
-  evaluation: {
-    title: 'RAG Evaluation & Telemetry',
-    subtitle: 'Citation Coverage, Retrieval Latency & Live Benchmark',
-  },
-  pipeline: {
-    title: 'RAG Pipeline Architecture',
-    subtitle: 'End-to-End Processing Flow Simulator',
+    title: 'Compare',
+    subtitle: 'Side-by-side multi-dimensional document analysis',
   },
 };
 
@@ -75,6 +64,8 @@ function WorkspaceInner() {
   const [documents, setDocuments] = useState<DocItem[]>([]);
   const [conversations, setConversations] = useState<ConvItem[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [totalQuestionsAsked, setTotalQuestionsAsked] = useState<number>(0);
+
   const [activeDocId, setActiveDocId] = useState<string | null>(null);
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
   const activeConvIdRef = useRef<string | null>(null);
@@ -94,6 +85,11 @@ function WorkspaceInner() {
   const [showGlobalSearchDropdown, setShowGlobalSearchDropdown] = useState(false);
   const [isWindowDragOver, setIsWindowDragOver] = useState(false);
 
+  const loadQuestionsCount = useCallback(async () => {
+    const count = await fetchTotalQuestionsCount(user?.id);
+    setTotalQuestionsAsked(count);
+  }, [user]);
+
   const loadDocs = useCallback(async () => {
     const docs = await fetchDocuments(user?.id);
     setDocuments(docs);
@@ -109,7 +105,8 @@ function WorkspaceInner() {
       const msgs = await fetchMessages(initialId, user?.id);
       setMessages(msgs);
     }
-  }, [user]);
+    loadQuestionsCount();
+  }, [user, loadQuestionsCount]);
 
   useEffect(() => {
     loadDocs();
@@ -145,6 +142,19 @@ function WorkspaceInner() {
     setCurrentView('chat');
   }, [user, showToast]);
 
+  const handleRenameConv = useCallback(
+    async (convId: string, newTitle: string) => {
+      const trimmed = newTitle.trim();
+      if (!trimmed) return;
+      await updateConversation(convId, trimmed, user?.id);
+      setConversations((prev) =>
+        prev.map((c) => (c.id === convId ? { ...c, title: trimmed } : c)),
+      );
+      showToast('Conversation renamed', 'info');
+    },
+    [user, showToast],
+  );
+
   const handleDeleteConv = useCallback(
     async (convId: string) => {
       await deleteConversation(convId, user?.id);
@@ -162,9 +172,10 @@ function WorkspaceInner() {
         }
         return remaining;
       });
+      loadQuestionsCount();
       showToast('Conversation deleted', 'info');
     },
-    [user, loadMsgs, showToast],
+    [user, loadMsgs, loadQuestionsCount, showToast],
   );
 
   const handleSendMessage = useCallback(
@@ -193,6 +204,9 @@ function WorkspaceInner() {
       }
 
       await saveMessage(msg, convId, user?.id);
+      if (msg.role === 'user') {
+        setTotalQuestionsAsked((prev) => prev + 1);
+      }
     },
     [user, conversations],
   );
@@ -222,7 +236,6 @@ function WorkspaceInner() {
     setActiveDocId(docId);
     setTargetDocHighlightQuery(snippet);
     setCurrentView('documents');
-    showToast('Navigated to grounded source passage in document inspector', 'info');
   };
 
   // Window drag & drop
@@ -273,14 +286,27 @@ function WorkspaceInner() {
     conversations.find((c) => c.id === activeConvId)?.title ??
     (messages.length > 0 ? 'Conversation' : 'New conversation');
 
-  // Filter documents for global quick-search
-  const globalSearchResults = globalSearch.trim()
-    ? documents.filter(
-        (d) =>
-          d.name.toLowerCase().includes(globalSearch.toLowerCase()) ||
-          d.summary?.toLowerCase().includes(globalSearch.toLowerCase())
-      )
-    : [];
+  // Global Search: searches Documents, Chats, Topics, and Content (Section 12)
+  const globalSearchResults = useMemo(() => {
+    const term = globalSearch.trim().toLowerCase();
+    if (!term) return { docs: [], convs: [] };
+
+    const matchingDocs = documents.filter(
+      (d) =>
+        d.name.toLowerCase().includes(term) ||
+        d.summary?.toLowerCase().includes(term) ||
+        d.extracted_text?.toLowerCase().includes(term),
+    );
+
+    const matchingConvs = conversations.filter((c) =>
+      c.title.toLowerCase().includes(term),
+    );
+
+    return { docs: matchingDocs, convs: matchingConvs };
+  }, [documents, conversations, globalSearch]);
+
+  const hasGlobalResults =
+    globalSearchResults.docs.length > 0 || globalSearchResults.convs.length > 0;
 
   return (
     <div className="h-screen flex bg-[#f4f7f7] overflow-hidden relative font-sans text-[#183237]">
@@ -292,12 +318,12 @@ function WorkspaceInner() {
           </div>
           <h2 className="text-2xl font-bold mb-1">Drop Documents Anywhere</h2>
           <p className="text-white/80 text-sm max-w-sm text-center">
-            Release your PDF, DOCX, or TXT files to automatically parse, chunk, embed, and index into your knowledge base.
+            Release PDF, DOCX, or TXT files to automatically extract and index into your knowledge base.
           </p>
         </div>
       )}
 
-      {/* Main Professional Sidebar (Section 15) */}
+      {/* Main Simplified Sidebar (Section 1, 3, 20) */}
       <Sidebar
         currentView={currentView}
         onNavigate={(view) => {
@@ -314,7 +340,7 @@ function WorkspaceInner() {
 
       {/* Main Workspace Column */}
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-        {/* Top Header Bar (Clean, Uncluttered, Professional AI SaaS per Section 15) */}
+        {/* Top Header Bar (Simplified, Clean, Professional per Section 2 & 14) */}
         <header className="h-14 px-4 sm:px-6 bg-white border-b border-[#e2ece9] flex items-center justify-between gap-4 z-20 flex-shrink-0">
           <div className="flex items-center gap-3 min-w-0">
             <button
@@ -338,9 +364,9 @@ function WorkspaceInner() {
             </div>
           </div>
 
-          {/* Center / Right: Global Search & Actions */}
+          {/* Center / Right: Global Search & Quick Actions (Section 12 & 14) */}
           <div className="flex items-center gap-3 flex-shrink-0">
-            {/* Global Search Input */}
+            {/* Global Search Input (Section 12: Searches Documents, Chats, Topics, Content) */}
             <div className="relative hidden sm:block">
               <div className="flex items-center gap-2 bg-[#f4f7f7] border border-[#d2ebe5] focus-within:border-[#3c8b7e] focus-within:bg-white rounded-xl px-3 py-1.5 transition w-56 lg:w-72">
                 <Search className="w-3.5 h-3.5 text-[#5e7a76] flex-shrink-0" />
@@ -352,7 +378,7 @@ function WorkspaceInner() {
                     setShowGlobalSearchDropdown(true);
                   }}
                   onFocus={() => setShowGlobalSearchDropdown(true)}
-                  placeholder="Quick search documents…"
+                  placeholder="Search documents, chats, content…"
                   className="bg-transparent text-xs text-[#183237] placeholder:text-[#5e7a76] focus:outline-none w-full"
                 />
                 {globalSearch && (
@@ -370,78 +396,97 @@ function WorkspaceInner() {
 
               {/* Global search results dropdown */}
               {showGlobalSearchDropdown && globalSearch.trim() && (
-                <div className="absolute right-0 mt-1.5 w-80 bg-white border border-[#d2ebe5] rounded-xl shadow-xl p-2 z-40 max-h-72 overflow-y-auto animate-fade-in">
-                  <div className="text-[10px] font-bold text-[#5e7a76] uppercase px-2 py-1">
-                    Matching Documents ({globalSearchResults.length})
-                  </div>
-                  {globalSearchResults.length === 0 ? (
-                    <div className="text-xs text-[#5e7a76] p-3 text-center">No documents matched "{globalSearch}"</div>
+                <div className="absolute right-0 mt-1.5 w-80 bg-white border border-[#d2ebe5] rounded-xl shadow-xl p-2 z-40 max-h-80 overflow-y-auto animate-fade-in">
+                  {!hasGlobalResults ? (
+                    <div className="text-xs text-[#5e7a76] p-3 text-center">
+                      No results matched "{globalSearch}"
+                    </div>
                   ) : (
-                    globalSearchResults.map((doc) => (
-                      <div
-                        key={doc.id}
-                        className="p-2 rounded-lg hover:bg-[#f4f7f7] transition flex items-center justify-between gap-2 text-xs"
-                      >
-                        <div className="min-w-0 flex items-center gap-2">
-                          <FileText className="w-3.5 h-3.5 text-[#3c8b7e] flex-shrink-0" />
-                          <span className="font-semibold text-[#183237] truncate">{doc.name}</span>
+                    <div className="space-y-3">
+                      {/* Documents Matches */}
+                      {globalSearchResults.docs.length > 0 && (
+                        <div>
+                          <div className="text-[10px] font-bold text-[#5e7a76] uppercase px-2 py-1 flex items-center gap-1">
+                            <FileText className="w-3 h-3 text-[#3c8b7e]" />
+                            <span>Documents ({globalSearchResults.docs.length})</span>
+                          </div>
+                          <div className="space-y-1">
+                            {globalSearchResults.docs.slice(0, 4).map((doc: DocItem) => (
+                              <button
+                                key={doc.id}
+                                onClick={() => {
+                                  setActiveDocId(doc.id);
+                                  setCurrentView('documents');
+                                  setShowGlobalSearchDropdown(false);
+                                  setGlobalSearch('');
+                                }}
+                                className="w-full text-left p-2 rounded-lg hover:bg-[#f4f7f7] transition flex items-center justify-between text-xs cursor-pointer group"
+                              >
+                                <span className="font-semibold text-[#183237] group-hover:text-[#1c4e48] truncate">
+                                  {doc.name}
+                                </span>
+                                <span className="text-[10px] uppercase font-bold text-[#5e7a76] px-1.5 py-0.2 rounded bg-[#e8f4f1]">
+                                  {doc.file_type}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          <button
-                            onClick={() => {
-                              setActiveDocId(doc.id);
-                              setCurrentView('documents');
-                              setShowGlobalSearchDropdown(false);
-                              setGlobalSearch('');
-                            }}
-                            className="px-2 py-0.5 rounded bg-[#e8f4f1] text-[#1c4e48] text-[10px] font-bold hover:bg-[#d2ebe5] cursor-pointer"
-                          >
-                            Inspect
-                          </button>
-                          <button
-                            onClick={() => {
-                              setActiveDocId(doc.id);
-                              setCurrentView('chat');
-                              setShowGlobalSearchDropdown(false);
-                              setGlobalSearch('');
-                            }}
-                            className="px-2 py-0.5 rounded bg-[#1c4e48] text-white text-[10px] font-bold hover:bg-[#163d38] cursor-pointer"
-                          >
-                            Chat
-                          </button>
+                      )}
+
+                      {/* Chats Matches */}
+                      {globalSearchResults.convs.length > 0 && (
+                        <div>
+                          <div className="text-[10px] font-bold text-[#5e7a76] uppercase px-2 py-1 flex items-center gap-1">
+                            <MessageSquare className="w-3 h-3 text-[#3c8b7e]" />
+                            <span>Conversations ({globalSearchResults.convs.length})</span>
+                          </div>
+                          <div className="space-y-1">
+                            {globalSearchResults.convs.slice(0, 4).map((conv: ConvItem) => (
+                              <button
+                                key={conv.id}
+                                onClick={() => {
+                                  handleSelectConv(conv.id);
+                                  setCurrentView('chat');
+                                  setShowGlobalSearchDropdown(false);
+                                  setGlobalSearch('');
+                                }}
+                                className="w-full text-left p-2 rounded-lg hover:bg-[#f4f7f7] transition flex items-center justify-between text-xs cursor-pointer group"
+                              >
+                                <span className="font-semibold text-[#183237] group-hover:text-[#1c4e48] truncate">
+                                  {conv.title}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    ))
+                      )}
+                    </div>
                   )}
                 </div>
               )}
             </div>
 
-            {/* RAG Status Indicator */}
-            <div className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#e8f4f1] border border-[#d2ebe5] text-xs font-semibold text-[#1c4e48]">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>Grounded RAG Ready</span>
-            </div>
-
-            {/* Quick Upload Action */}
+            {/* Quick Upload Action Button (Section 14) */}
             <button
               onClick={() => setUploadOpen(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#1c4e48] hover:bg-[#163d38] text-white text-xs font-bold transition shadow-2xs cursor-pointer group"
-              title="Upload PDF, DOCX, or TXT files (Ctrl+U)"
+              title="Upload PDF, DOCX, or TXT files"
             >
-              <Upload className="w-3.5 h-3.5 group-hover:-translate-y-0.5 transition-transform" />
+              <Upload className="w-3.5 h-3.5 group-hover:-translate-y-0.5 transition-transform text-[#7dd3c4]" />
               <span className="hidden sm:inline">Upload</span>
             </button>
           </div>
         </header>
 
-        {/* Dynamic View Body */}
+        {/* Dynamic View Body (Section 1, 3, 20: Only Dashboard, Documents, Chat, Study, Compare) */}
         <main className="flex-1 overflow-hidden relative">
           {currentView === 'dashboard' && (
             <div className="h-full overflow-y-auto">
               <DashboardView
                 documents={documents}
                 conversations={conversations}
+                totalQuestionsAsked={totalQuestionsAsked}
                 onNavigate={(v) => setCurrentView(v as MainNavView)}
                 onOpenUpload={() => setUploadOpen(true)}
                 onSelectDoc={(id) => {
@@ -499,6 +544,7 @@ function WorkspaceInner() {
                 onSelectConv={handleSelectConv}
                 onNewConversation={handleNewConversation}
                 onDeleteConv={handleDeleteConv}
+                onRenameConv={handleRenameConv}
                 onUploadClick={() => setUploadOpen(true)}
                 onOpenStudyModal={(doc) => {
                   setActiveDocId(doc.id);
@@ -532,31 +578,6 @@ function WorkspaceInner() {
               />
             </div>
           )}
-
-          {currentView === 'knowledge-map' && (
-            <div className="h-full overflow-hidden">
-              <KnowledgeMapView
-                documents={documents}
-                onSelectDoc={(id) => {
-                  setActiveDocId(id);
-                  setCurrentView('documents');
-                }}
-                onNavigateToChat={() => setCurrentView('chat')}
-              />
-            </div>
-          )}
-
-          {currentView === 'pipeline' && (
-            <div className="h-full overflow-y-auto">
-              <PipelineView />
-            </div>
-          )}
-
-          {currentView === 'evaluation' && (
-            <div className="h-full overflow-y-auto">
-              <EvaluationView documents={documents} messages={messages} />
-            </div>
-          )}
         </main>
       </div>
 
@@ -567,13 +588,13 @@ function WorkspaceInner() {
         onUploaded={loadDocs}
       />
 
-      {/* Settings Dialog (Section 15 & 17) */}
+      {/* Settings Dialog */}
       <SettingsModal
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
       />
 
-      {/* Help & System Documentation Dialog (Section 15) */}
+      {/* Help Dialog */}
       <HelpModal
         open={helpOpen}
         onClose={() => setHelpOpen(false)}

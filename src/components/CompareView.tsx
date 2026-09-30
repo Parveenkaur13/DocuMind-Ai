@@ -128,13 +128,10 @@ export function CompareView({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-lg font-bold text-[#183237]">Cross-Document Intelligence Comparison</h1>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#e8f4f1] text-[#1c4e48] uppercase tracking-wider">
-                  Multi-Doc RAG
-                </span>
+                <h1 className="text-lg font-bold text-[#183237]">Document Comparison</h1>
               </div>
               <p className="text-xs text-[#5e7a76]">
-                Compare methodology, technologies, datasets, algorithms, and results in a structured matrix.
+                Compare Purpose, Topics, Methodology, Technology, Dataset, Algorithms, Results, Advantages, Limitations, and Future Work.
               </p>
             </div>
           </div>
@@ -336,7 +333,7 @@ export function CompareView({
                       Structured Comparison Dimensions
                     </h3>
                   </div>
-                  <span className="text-[11px] font-semibold text-[#5e7a76]">9 Core Dimensions Analyzed</span>
+                  <span className="text-[11px] font-semibold text-[#5e7a76]">10 Core Dimensions Analyzed</span>
                 </div>
 
                 <div className="overflow-x-auto">

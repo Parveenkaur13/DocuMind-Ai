@@ -5,9 +5,6 @@ import {
   MessageSquare,
   BookOpen,
   GitCompare,
-  Compass,
-  BarChart3,
-  Cpu,
   Settings,
   HelpCircle,
   LogOut,
@@ -38,10 +35,7 @@ export type MainNavView =
   | 'documents'
   | 'chat'
   | 'study'
-  | 'compare'
-  | 'knowledge-map'
-  | 'evaluation'
-  | 'pipeline';
+  | 'compare';
 
 interface SidebarProps {
   currentView: MainNavView;
@@ -77,9 +71,6 @@ export function Sidebar({
     { id: 'chat', label: 'AI Chat (RAG)', icon: MessageSquare },
     { id: 'study', label: 'Study Mode', icon: BookOpen },
     { id: 'compare', label: 'Compare', icon: GitCompare },
-    { id: 'knowledge-map', label: 'Knowledge Map', icon: Compass },
-    { id: 'evaluation', label: 'Evaluation', icon: BarChart3 },
-    { id: 'pipeline', label: 'AI Pipeline', icon: Cpu },
   ];
 
   return (
@@ -92,7 +83,7 @@ export function Sidebar({
         />
       )}
 
-      {/* Main Sidebar */}
+      {/* Main Sidebar (Clean Navigation structure per Section 1, 3, 20) */}
       <aside
         className={`fixed lg:static inset-y-0 left-0 z-40 w-64 bg-[#0f322d] text-white flex flex-col justify-between transition-transform duration-300 ease-in-out border-r border-[#1c4e48]/40 shadow-xl lg:shadow-none flex-shrink-0 ${
           open ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
@@ -101,7 +92,7 @@ export function Sidebar({
         {/* Brand Header */}
         <div className="p-5 border-b border-white/10 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#3c8b7e] to-[#1c4e48] flex items-center justify-center text-white shadow-xs">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#3c8b7e] to-[#1c4e48] flex items-center justify-center text-white shadow-xs">
               <FileText className="w-5 h-5 text-white" />
             </div>
             <div>
@@ -139,12 +130,8 @@ export function Sidebar({
           </button>
         </div>
 
-        {/* Main Navigation (Section 15) */}
+        {/* Main Navigation (Section 1, 3, 20) */}
         <nav className="flex-1 px-3 py-2 space-y-1 overflow-y-auto">
-          <div className="text-[10px] font-bold text-white/40 uppercase tracking-widest px-3 py-1">
-            Navigation
-          </div>
-
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = currentView === item.id;
@@ -156,7 +143,7 @@ export function Sidebar({
                   onNavigate(item.id);
                   onClose();
                 }}
-                className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition cursor-pointer ${
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
                   isActive
                     ? 'bg-white/15 text-white shadow-2xs font-bold border border-white/15'
                     : 'text-white/70 hover:text-white hover:bg-white/8'
@@ -187,14 +174,14 @@ export function Sidebar({
           })}
         </nav>
 
-        {/* Bottom Section: Settings, Help & Session (Section 15) */}
+        {/* Bottom Section: Settings & Help (Section 1, 3, 20) */}
         <div className="p-3 border-t border-white/10 bg-[#0c2824]/60 space-y-1 flex-shrink-0">
           <button
             onClick={() => {
               onOpenSettings();
               onClose();
             }}
-            className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-white/75 hover:text-white hover:bg-white/8 text-xs font-medium transition cursor-pointer"
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-white/75 hover:text-white hover:bg-white/8 text-xs font-medium transition cursor-pointer"
           >
             <Settings className="w-3.5 h-3.5 text-[#7dd3c4]" />
             <span>Settings</span>
@@ -205,7 +192,7 @@ export function Sidebar({
               onOpenHelp();
               onClose();
             }}
-            className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-white/75 hover:text-white hover:bg-white/8 text-xs font-medium transition cursor-pointer"
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-white/75 hover:text-white hover:bg-white/8 text-xs font-medium transition cursor-pointer"
           >
             <HelpCircle className="w-3.5 h-3.5 text-[#7dd3c4]" />
             <span>Help & About</span>
@@ -217,16 +204,12 @@ export function Sidebar({
               <div className="text-[11px] font-bold text-white truncate">
                 {user?.email || 'Active Session'}
               </div>
-              <div className="text-[10px] text-[#7dd3c4] flex items-center gap-1 font-semibold">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#3c8b7e] animate-pulse" />
-                <span>Grounded RAG Active</span>
-              </div>
             </div>
 
             <button
               onClick={() => signOut()}
               className="p-1.5 rounded-lg text-white/50 hover:text-white hover:bg-white/10 transition cursor-pointer"
-              title="Sign Out / Switch Account"
+              title="Sign Out"
             >
               <LogOut className="w-3.5 h-3.5" />
             </button>

@@ -17,16 +17,21 @@ import {
   Check,
   Download,
   X,
-  ExternalLink,
   ChevronRight,
   Filter,
   Eye,
   GitCompare,
   Tag,
   ArrowRight,
+  Share2,
+  Calendar,
+  Briefcase,
+  DollarSign,
+  Cpu,
+  ChevronDown,
 } from 'lucide-react';
 import type { DocItem } from './Sidebar';
-import { splitIntoChunks, extractEntitiesFromText } from '../lib/ai';
+import { splitIntoChunks, extractEntitiesFromText, type ExtractedEntity } from '../lib/ai';
 import { useToast } from './Toast';
 
 interface DocumentsViewProps {
@@ -60,6 +65,12 @@ function formatDate(iso: string): string {
   }
 }
 
+function estimatePages(text: string): number {
+  if (!text) return 1;
+  const words = text.trim().split(/\s+/).filter(Boolean).length;
+  return Math.max(1, Math.ceil(words / 320));
+}
+
 export function DocumentsView({
   documents,
   selectedDocIds,
@@ -80,18 +91,25 @@ export function DocumentsView({
   const [sortBy, setSortBy] = useState<'date' | 'name' | 'size'>('date');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
 
-  // Document Detail Inspector State (Section 16 three-panel view)
+  // Document Detail Inspector State (Section 6 & 11)
   const [detailDoc, setDetailDoc] = useState<DocItem | null>(() => {
     if (initialDocId) {
       return documents.find((d) => d.id === initialDocId) || null;
     }
     return null;
   });
-  const [activeDetailTab, setActiveDetailTab] = useState<'summary' | 'topics' | 'entities' | 'sources' | 'content' | 'details'>(
-    initialQuery ? 'content' : 'summary'
-  );
+
+  const [activeDetailTab, setActiveDetailTab] = useState<
+    'summary' | 'topics' | 'entities' | 'knowledge' | 'content' | 'sources' | 'details'
+  >(initialQuery ? 'content' : 'summary');
+
   const [contentSearch, setContentSearch] = useState(initialQuery || '');
   const [copied, setCopied] = useState(false);
+  const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({
+    topics: true,
+    concepts: true,
+    entities: true,
+  });
 
   React.useEffect(() => {
     if (initialDocId) {
@@ -127,13 +145,16 @@ export function DocumentsView({
 
   // Selected document details
   const detailStats = useMemo(() => {
-    if (!detailDoc?.extracted_text) return { words: 0, chars: 0, readingTime: '1 min', chunks: 0 };
+    if (!detailDoc?.extracted_text) {
+      return { words: 0, chars: 0, readingTime: '1 min', chunks: 0, pages: 1 };
+    }
     const text = detailDoc.extracted_text;
     const words = text.trim().split(/\s+/).filter(Boolean).length;
     const chars = text.length;
     const chunks = splitIntoChunks(text).length;
+    const pages = Math.max(1, Math.ceil(words / 320));
     const readingTime = `${Math.max(1, Math.ceil(words / 200))} min read`;
-    return { words, chars, readingTime, chunks };
+    return { words, chars, readingTime, chunks, pages };
   }, [detailDoc]);
 
   const detailEntities = useMemo(() => {
@@ -161,7 +182,7 @@ export function DocumentsView({
     }
     return Array.from(counts.entries())
       .sort((a, b) => b[1] - a[1])
-      .slice(0, 18)
+      .slice(0, 16)
       .map(([topic, count]) => ({ topic, count }));
   }, [detailDoc]);
 
@@ -205,18 +226,25 @@ export function DocumentsView({
     showToast('Downloaded document text', 'success');
   };
 
-  // If a document is selected for detail inspection (Section 16: Three-panel layout)
+  // Toggle tree node in Knowledge Map
+  const toggleNode = (node: string) => {
+    setExpandedNodes((prev) => ({ ...prev, [node]: !prev[node] }));
+  };
+
+  // -------------------------------------------------------------
+  // DOCUMENT DETAIL WORKSPACE (Section 6 & 11)
+  // -------------------------------------------------------------
   if (detailDoc) {
     return (
       <div className="flex-1 flex flex-col h-full bg-[#f8fbfa] overflow-hidden">
-        {/* Top Header of Detail Inspector */}
-        <div className="flex items-center justify-between px-6 py-3.5 bg-white border-b border-[#e2ece9] flex-shrink-0">
+        {/* Detail Workspace Top Header */}
+        <div className="flex items-center justify-between px-6 py-3 bg-white border-b border-[#e2ece9] flex-shrink-0">
           <div className="flex items-center gap-3 min-w-0">
             <button
               onClick={() => setDetailDoc(null)}
               className="text-xs font-semibold text-[#5e7a76] hover:text-[#183237] flex items-center gap-1 transition cursor-pointer"
             >
-              <span>← All Documents</span>
+              <span>← Documents</span>
             </button>
             <ChevronRight className="w-3.5 h-3.5 text-[#9bbcb6]" />
             <div className="flex items-center gap-2 min-w-0">
@@ -236,7 +264,7 @@ export function DocumentsView({
               className="px-3 py-1.5 rounded-xl bg-[#1c4e48] text-white hover:bg-[#163d38] text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
             >
               <MessageSquare className="w-3.5 h-3.5 text-[#7dd3c4]" />
-              <span>Chat with Doc</span>
+              <span>Ask AI</span>
             </button>
             <button
               onClick={() => onNavigateToStudy(detailDoc)}
@@ -246,312 +274,154 @@ export function DocumentsView({
               <span>Study Mode</span>
             </button>
             <button
-              onClick={() => {
-                onSelectDocForChat(detailDoc.id);
-                onNavigateToChat();
-              }}
-              className="p-1.5 rounded-lg border border-[#d4e0dd] hover:bg-[#f0f4f3] text-[#5e7a76] hover:text-[#183237] transition cursor-pointer"
-              title="Open in Chat"
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-            </button>
-            <button
               onClick={() => setDetailDoc(null)}
               className="p-1.5 rounded-lg text-[#5e7a76] hover:text-[#183237] hover:bg-[#f0f4f3] transition cursor-pointer"
-              title="Close Inspector"
+              title="Close Workspace"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
         </div>
 
-        {/* Professional Three-Panel Layout (Section 16) */}
+        {/* Clean Two-Column Layout (Section 6) */}
         <div className="flex-1 flex overflow-hidden">
-          {/* LEFT PANEL: Metadata, Statistics & Extracted Entities */}
-          <div className="w-72 bg-white border-r border-[#e2ece9] p-5 overflow-y-auto space-y-5 hidden md:block flex-shrink-0">
-            <div>
-              <h3 className="text-xs font-bold text-[#5e7a76] uppercase tracking-wider mb-2.5">
-                Document Metadata
-              </h3>
-              <div className="space-y-2 text-xs">
-                <div className="flex justify-between py-1 border-b border-[#f4f7f6]">
-                  <span className="text-[#5e7a76] flex items-center gap-1.5">
-                    <HardDrive className="w-3.5 h-3.5 text-[#3c8b7e]" />
-                    <span>Size</span>
-                  </span>
-                  <span className="font-semibold text-[#183237]">{formatBytes(detailDoc.file_size)}</span>
+          {/* MAIN/LEFT PANEL: Document Preview / Content */}
+          <div className="flex-1 flex flex-col min-w-0 bg-white border-r border-[#e2ece9]">
+            {/* Search & Actions toolbar for Content */}
+            <div className="flex items-center justify-between px-6 py-2.5 bg-[#f8fbfa] border-b border-[#e2ece9] flex-shrink-0">
+              <div className="flex items-center gap-2 text-xs font-semibold text-[#183237]">
+                <FileText className="w-4 h-4 text-[#3c8b7e]" />
+                <span>Document Content</span>
+                <span className="text-[11px] text-[#5e7a76]">
+                  ({detailStats.pages} {detailStats.pages === 1 ? 'page' : 'pages'} • {detailStats.words.toLocaleString()} words)
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <div className="relative w-48">
+                  <Search className="w-3.5 h-3.5 text-[#5e7a76] absolute left-2.5 top-2.5" />
+                  <input
+                    type="text"
+                    placeholder="Find in text…"
+                    value={contentSearch}
+                    onChange={(e) => setContentSearch(e.target.value)}
+                    className="w-full pl-8 pr-2.5 py-1 rounded-lg border border-[#d4e0dd] text-xs focus:outline-none focus:ring-1 focus:ring-[#3c8b7e]"
+                  />
                 </div>
-                <div className="flex justify-between py-1 border-b border-[#f4f7f6]">
-                  <span className="text-[#5e7a76]">Word Count</span>
-                  <span className="font-semibold text-[#183237]">{detailStats.words.toLocaleString()} words</span>
-                </div>
-                <div className="flex justify-between py-1 border-b border-[#f4f7f6]">
-                  <span className="text-[#5e7a76] flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-[#3c8b7e]" />
-                    <span>Reading Time</span>
-                  </span>
-                  <span className="font-semibold text-[#183237]">{detailStats.readingTime}</span>
-                </div>
-                <div className="flex justify-between py-1 border-b border-[#f4f7f6]">
-                  <span className="text-[#5e7a76] flex items-center gap-1.5">
-                    <Layers className="w-3.5 h-3.5 text-[#3c8b7e]" />
-                    <span>Knowledge Chunks</span>
-                  </span>
-                  <span className="font-semibold text-[#3c8b7e] font-mono">~{detailStats.chunks} chunks</span>
-                </div>
-                <div className="flex justify-between py-1 border-b border-[#f4f7f6]">
-                  <span className="text-[#5e7a76]">Indexed Date</span>
-                  <span className="font-semibold text-[#183237]">{formatDate(detailDoc.created_at)}</span>
-                </div>
-                <div className="flex justify-between py-1">
-                  <span className="text-[#5e7a76]">RAG Status</span>
-                  <span className="font-semibold text-emerald-600 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                    Verified Grounded
-                  </span>
-                </div>
+                <button
+                  onClick={handleCopyContent}
+                  className="p-1.5 rounded-lg border border-[#d4e0dd] hover:bg-white text-[#5e7a76] text-xs transition cursor-pointer"
+                  title="Copy Text"
+                >
+                  {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
+                <button
+                  onClick={handleDownload}
+                  className="p-1.5 rounded-lg border border-[#d4e0dd] hover:bg-white text-[#5e7a76] text-xs transition cursor-pointer"
+                  title="Download Text"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                </button>
               </div>
             </div>
 
-            {/* Extracted Entities preview */}
-            <div>
-              <h3 className="text-xs font-bold text-[#5e7a76] uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                <Tag className="w-3.5 h-3.5 text-[#3c8b7e]" />
-                <span>Extracted Entities ({detailEntities.length})</span>
-              </h3>
-              <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
-                {detailEntities.length === 0 ? (
-                  <p className="text-[11px] text-[#5e7a76]">No entities extracted.</p>
-                ) : (
-                  detailEntities.slice(0, 10).map((ent, idx) => (
-                    <div
-                      key={idx}
-                      className="p-2 rounded-lg bg-[#f8fbfa] border border-[#e8efed] text-[11px] space-y-0.5"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-[#1c4e48] truncate">{ent.value}</span>
-                        <span className="text-[9px] uppercase px-1.5 py-0.2 rounded bg-white text-[#5e7a76] border border-[#e2ece9]">
-                          {ent.category}
-                        </span>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-
-            <div className="pt-2">
-              <button
-                onClick={() => {
-                  if (confirm(`Are you sure you want to delete ${detailDoc.name}?`)) {
-                    onDeleteDoc(detailDoc.id);
-                    setDetailDoc(null);
-                  }
-                }}
-                className="w-full py-2 rounded-xl text-red-600 hover:bg-red-50 text-xs font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer border border-transparent hover:border-red-200"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Delete Document</span>
-              </button>
+            {/* Document Text Body */}
+            <div className="flex-1 p-6 overflow-y-auto font-mono text-xs text-[#183237] leading-relaxed whitespace-pre-wrap select-text bg-[#fbfdfc]">
+              {highlightedContent || 'No extracted text available.'}
             </div>
           </div>
 
-          {/* CENTER PANEL: Document Content & Preview with Search */}
-          <div className="flex-1 flex flex-col min-w-0 bg-[#f8fbfa] border-r border-[#e2ece9]">
-            {/* Tabs for Center Content */}
-            <div className="flex items-center justify-between px-6 py-2.5 bg-white border-b border-[#e2ece9] flex-shrink-0">
-              <div className="flex items-center gap-1">
+          {/* RIGHT PANEL: AI Assistant & Detailed Workspace Tabs (Section 6 & 11) */}
+          <div className="w-96 lg:w-[460px] bg-white flex flex-col flex-shrink-0">
+            {/* Tabs */}
+            <div className="flex items-center gap-1 px-4 py-2.5 border-b border-[#e2ece9] overflow-x-auto no-scrollbar flex-shrink-0">
+              {[
+                { id: 'summary', label: 'AI Summary' },
+                { id: 'topics', label: 'Key Topics' },
+                { id: 'entities', label: 'Entities' },
+                { id: 'knowledge', label: 'Knowledge Map' },
+                { id: 'sources', label: 'Sources' },
+                { id: 'details', label: 'Details' },
+              ].map((tab) => (
                 <button
-                  onClick={() => setActiveDetailTab('summary')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                    activeDetailTab === 'summary'
+                  key={tab.id}
+                  onClick={() => setActiveDetailTab(tab.id as typeof activeDetailTab)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
+                    activeDetailTab === tab.id
                       ? 'bg-[#1c4e48] text-white shadow-2xs'
                       : 'text-[#5e7a76] hover:text-[#183237] hover:bg-[#f0f4f3]'
                   }`}
                 >
-                  AI Summary
+                  {tab.label}
                 </button>
-                <button
-                  onClick={() => setActiveDetailTab('topics')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                    activeDetailTab === 'topics'
-                      ? 'bg-[#1c4e48] text-white shadow-2xs'
-                      : 'text-[#5e7a76] hover:text-[#183237] hover:bg-[#f0f4f3]'
-                  }`}
-                >
-                  Key Topics ({detailTopics.length})
-                </button>
-                <button
-                  onClick={() => setActiveDetailTab('entities')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                    activeDetailTab === 'entities'
-                      ? 'bg-[#1c4e48] text-white shadow-2xs'
-                      : 'text-[#5e7a76] hover:text-[#183237] hover:bg-[#f0f4f3]'
-                  }`}
-                >
-                  Entities ({detailEntities.length})
-                </button>
-                <button
-                  onClick={() => setActiveDetailTab('sources')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                    activeDetailTab === 'sources'
-                      ? 'bg-[#1c4e48] text-white shadow-2xs'
-                      : 'text-[#5e7a76] hover:text-[#183237] hover:bg-[#f0f4f3]'
-                  }`}
-                >
-                  Sources ({detailChunks.length})
-                </button>
-                <button
-                  onClick={() => setActiveDetailTab('content')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                    activeDetailTab === 'content'
-                      ? 'bg-[#1c4e48] text-white shadow-2xs'
-                      : 'text-[#5e7a76] hover:text-[#183237] hover:bg-[#f0f4f3]'
-                  }`}
-                >
-                  Content
-                </button>
-                <button
-                  onClick={() => setActiveDetailTab('details')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                    activeDetailTab === 'details'
-                      ? 'bg-[#1c4e48] text-white shadow-2xs'
-                      : 'text-[#5e7a76] hover:text-[#183237] hover:bg-[#f0f4f3]'
-                  }`}
-                >
-                  Details
-                </button>
-              </div>
-
-              {activeDetailTab === 'content' && (
-                <div className="flex items-center gap-2">
-                  <div className="relative w-48">
-                    <Search className="w-3.5 h-3.5 text-[#5e7a76] absolute left-2.5 top-2.5" />
-                    <input
-                      type="text"
-                      placeholder="Find in text…"
-                      value={contentSearch}
-                      onChange={(e) => setContentSearch(e.target.value)}
-                      className="w-full pl-8 pr-2.5 py-1 rounded-lg border border-[#d4e0dd] text-xs focus:outline-none focus:ring-1 focus:ring-[#3c8b7e]"
-                    />
-                  </div>
-                  <button
-                    onClick={handleCopyContent}
-                    className="p-1.5 rounded-lg border border-[#d4e0dd] hover:bg-[#f0f4f3] text-[#5e7a76] text-xs transition cursor-pointer"
-                    title="Copy Text"
-                  >
-                    {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                  </button>
-                  <button
-                    onClick={handleDownload}
-                    className="p-1.5 rounded-lg border border-[#d4e0dd] hover:bg-[#f0f4f3] text-[#5e7a76] text-xs transition cursor-pointer"
-                    title="Download Text"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              )}
+              ))}
             </div>
 
-            {/* Center Content Body */}
-            <div className="flex-1 p-6 overflow-y-auto">
+            {/* Tab Body */}
+            <div className="flex-1 p-5 overflow-y-auto space-y-4">
+              {/* TAB 1: AI Summary */}
               {activeDetailTab === 'summary' && (
-                <div className="max-w-2xl bg-white p-6 rounded-2xl border border-[#e2ece9] shadow-2xs space-y-4">
-                  <div className="flex items-center gap-2 text-[#1c4e48]">
-                    <Sparkles className="w-4 h-4 text-[#3c8b7e]" />
-                    <h2 className="text-sm font-bold uppercase tracking-wider">Executive Summary</h2>
+                <div className="space-y-4">
+                  <div className="p-4 rounded-2xl bg-[#f8fbfa] border border-[#e8efed] space-y-2.5">
+                    <div className="flex items-center gap-2 text-[#1c4e48]">
+                      <Sparkles className="w-4 h-4 text-[#3c8b7e]" />
+                      <h3 className="text-xs font-bold uppercase tracking-wider">Executive Summary</h3>
+                    </div>
+                    <p className="text-xs text-[#183237] leading-relaxed whitespace-pre-line">
+                      {detailDoc.summary || 'Summary generated from document text.'}
+                    </p>
                   </div>
-                  <div className="text-sm text-[#183237] leading-relaxed whitespace-pre-line bg-[#f8fbfa] p-4 rounded-xl border border-[#e8efed]">
-                    {detailDoc.summary || 'Summary is being generated or was not available during extraction.'}
-                  </div>
-                  <div className="pt-2 flex items-center justify-between text-xs text-[#5e7a76] border-t border-[#f0f4f3]">
-                    <span>Verified grounded by Gemini RAG engine</span>
+
+                  {/* Quick AI Triggers */}
+                  <div className="space-y-2 pt-2">
+                    <h4 className="text-[11px] font-bold text-[#5e7a76] uppercase tracking-wider">
+                      Study & Analyze
+                    </h4>
                     <button
                       onClick={() => onNavigateToStudy(detailDoc)}
-                      className="text-[#3c8b7e] font-semibold hover:underline flex items-center gap-1 cursor-pointer"
+                      className="w-full text-left p-3 rounded-xl bg-white hover:bg-[#f8fbfa] border border-[#e2ece9] hover:border-[#3c8b7e] transition cursor-pointer flex items-center justify-between"
                     >
-                      <span>Generate Full Study Notes</span>
-                      <ArrowRight className="w-3.5 h-3.5" />
+                      <div>
+                        <div className="text-xs font-bold text-[#183237]">Generate Study Suite</div>
+                        <div className="text-[11px] text-[#5e7a76]">MCQs, flashcards, short notes & viva questions</div>
+                      </div>
+                      <BookOpen className="w-4 h-4 text-[#3c8b7e]" />
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        onSelectDocForChat(detailDoc.id);
+                        onNavigateToChat();
+                      }}
+                      className="w-full text-left p-3 rounded-xl bg-[#f0f7f5] hover:bg-[#e0ece8] border border-[#d2ebe5] transition cursor-pointer flex items-center justify-between"
+                    >
+                      <div>
+                        <div className="text-xs font-bold text-[#1c4e48]">Ask AI About This File</div>
+                        <div className="text-[11px] text-[#5e7a76]">Grounded answers with page citations</div>
+                      </div>
+                      <ArrowRight className="w-4 h-4 text-[#3c8b7e]" />
                     </button>
                   </div>
                 </div>
               )}
 
-              {activeDetailTab === 'content' && (
-                <div className="bg-white p-6 rounded-2xl border border-[#e2ece9] shadow-2xs font-mono text-xs text-[#183237] leading-relaxed whitespace-pre-wrap select-text">
-                  {highlightedContent || 'No extracted text available.'}
-                </div>
-              )}
-
-              {activeDetailTab === 'sources' && (
-                <div className="space-y-3 max-w-3xl">
-                  <div className="text-xs text-[#5e7a76]">
-                    Document split into <strong>{detailChunks.length} semantic chunks</strong> with 120-character overlap for vector search and cosine retrieval.
-                  </div>
-                  {detailChunks.map((chunk, idx) => (
-                    <div
-                      key={idx}
-                      className="p-4 rounded-xl bg-white border border-[#e2ece9] shadow-2xs space-y-1.5"
-                    >
-                      <div className="flex items-center justify-between text-[11px] font-bold text-[#1c4e48]">
-                        <span>Chunk #{idx + 1}</span>
-                        <span className="font-mono text-[#5e7a76]">{chunk.length} characters</span>
-                      </div>
-                      <p className="text-xs text-[#183237] leading-relaxed bg-[#f8fbfa] p-3 rounded-lg border border-[#e8efed]">
-                        {chunk}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {activeDetailTab === 'entities' && (
-                <div className="max-w-3xl space-y-4">
-                  <div className="text-xs text-[#5e7a76]">
-                    Key terminology, quantitative data, and organizational entities extracted from this document.
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {detailEntities.map((ent, idx) => (
-                      <div
-                        key={idx}
-                        className="p-3.5 rounded-xl bg-white border border-[#e2ece9] shadow-2xs space-y-1"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-[#1c4e48]">{ent.value}</span>
-                          <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-[#e8f4f1] text-[#1c4e48]">
-                            {ent.category}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-[#5e7a76] italic line-clamp-2">
-                          "{ent.context}"
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
+              {/* TAB 2: Key Topics */}
               {activeDetailTab === 'topics' && (
-                <div className="max-w-3xl space-y-4">
-                  <div className="text-xs text-[#5e7a76]">
-                    Key conceptual themes and domain topics extracted from <strong>{detailDoc.name}</strong>.
-                  </div>
+                <div className="space-y-3">
+                  <p className="text-xs text-[#5e7a76]">
+                    Key themes and recurring technical concepts identified in <strong>{detailDoc.name}</strong>:
+                  </p>
                   {detailTopics.length === 0 ? (
-                    <div className="p-8 text-center bg-white rounded-2xl border border-[#e2ece9] text-xs text-[#5e7a76]">
-                      No key topics extracted.
-                    </div>
+                    <div className="p-6 text-center text-xs text-[#5e7a76]">No key topics extracted.</div>
                   ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <div className="grid grid-cols-2 gap-2">
                       {detailTopics.map((item, idx) => (
                         <div
                           key={idx}
-                          className="p-3.5 rounded-xl bg-white border border-[#e2ece9] shadow-2xs flex items-center justify-between gap-2"
+                          className="p-2.5 rounded-xl bg-[#f8fbfa] border border-[#e8efed] flex items-center justify-between gap-1.5"
                         >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <Tag className="w-3.5 h-3.5 text-[#3c8b7e] flex-shrink-0" />
-                            <span className="text-xs font-bold text-[#183237] truncate">{item.topic}</span>
-                          </div>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#e8f4f1] text-[#1c4e48] flex-shrink-0">
+                          <span className="text-xs font-bold text-[#183237] truncate">{item.topic}</span>
+                          <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-[#e8f4f1] text-[#1c4e48]">
                             {item.count}×
                           </span>
                         </div>
@@ -561,134 +431,214 @@ export function DocumentsView({
                 </div>
               )}
 
-              {activeDetailTab === 'details' && (
-                <div className="max-w-2xl bg-white p-6 rounded-2xl border border-[#e2ece9] shadow-2xs space-y-4">
-                  <div className="flex items-center gap-2 text-[#1c4e48]">
-                    <HardDrive className="w-4 h-4 text-[#3c8b7e]" />
-                    <h2 className="text-sm font-bold uppercase tracking-wider">Technical Document Metadata</h2>
+              {/* TAB 3: Extracted Entities */}
+              {activeDetailTab === 'entities' && (
+                <div className="space-y-3">
+                  <p className="text-xs text-[#5e7a76]">
+                    Entities, terminology, and metrics extracted from text:
+                  </p>
+                  {detailEntities.length === 0 ? (
+                    <div className="p-6 text-center text-xs text-[#5e7a76]">No entities extracted.</div>
+                  ) : (
+                    <div className="space-y-2 max-h-[460px] overflow-y-auto pr-1">
+                      {detailEntities.map((ent, idx) => (
+                        <div
+                          key={idx}
+                          className="p-3 rounded-xl bg-[#f8fbfa] border border-[#e8efed] space-y-1"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-[#1c4e48]">{ent.value}</span>
+                            <span className="text-[9px] uppercase font-bold px-2 py-0.5 rounded-full bg-[#e8f4f1] text-[#1c4e48]">
+                              {ent.category}
+                            </span>
+                          </div>
+                          {ent.context && (
+                            <p className="text-[11px] text-[#5e7a76] italic line-clamp-2">
+                              "{ent.context}"
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 4: Knowledge Map (Section 11: Document -> Topics -> Concepts -> Entities) */}
+              {activeDetailTab === 'knowledge' && (
+                <div className="space-y-4">
+                  <div className="p-3 rounded-xl bg-[#f0f7f5] border border-[#d2ebe5] text-xs text-[#1c4e48]">
+                    <div className="font-bold flex items-center gap-1.5 mb-0.5">
+                      <Sparkles className="w-3.5 h-3.5 text-[#3c8b7e]" />
+                      <span>Document Knowledge Hierarchy</span>
+                    </div>
+                    <p className="text-[11px] text-[#5e7a76]">
+                      Interactive structural taxonomy built from extracted topics, concepts, and entities.
+                    </p>
                   </div>
-                  <div className="divide-y divide-[#f0f4f3] text-xs">
-                    <div className="py-2.5 flex justify-between">
-                      <span className="text-[#5e7a76]">File Name</span>
-                      <span className="font-semibold text-[#183237]">{detailDoc.name}</span>
+
+                  {/* Hierarchical Tree (Section 11) */}
+                  <div className="p-4 rounded-2xl bg-[#f8fbfa] border border-[#e2ece9] font-mono text-xs space-y-3">
+                    {/* Root: Document */}
+                    <div className="flex items-center gap-2 text-[#1c4e48] font-bold">
+                      <FileText className="w-4 h-4 text-[#3c8b7e]" />
+                      <span className="truncate">{detailDoc.name}</span>
                     </div>
-                    <div className="py-2.5 flex justify-between">
-                      <span className="text-[#5e7a76]">File Format</span>
-                      <span className="font-semibold uppercase text-[#1c4e48]">{detailDoc.file_type}</span>
-                    </div>
-                    <div className="py-2.5 flex justify-between">
-                      <span className="text-[#5e7a76]">Raw File Size</span>
-                      <span className="font-semibold text-[#183237]">{formatBytes(detailDoc.file_size)} ({detailDoc.file_size.toLocaleString()} bytes)</span>
-                    </div>
-                    <div className="py-2.5 flex justify-between">
-                      <span className="text-[#5e7a76]">Extracted Words</span>
-                      <span className="font-semibold text-[#183237]">{detailStats.words.toLocaleString()} words</span>
-                    </div>
-                    <div className="py-2.5 flex justify-between">
-                      <span className="text-[#5e7a76]">Extracted Characters</span>
-                      <span className="font-semibold text-[#183237]">{detailStats.chars.toLocaleString()} characters</span>
-                    </div>
-                    <div className="py-2.5 flex justify-between">
-                      <span className="text-[#5e7a76]">Semantic Chunks</span>
-                      <span className="font-semibold text-[#3c8b7e] font-mono">{detailStats.chunks} chunks (700 chars / 120 overlap)</span>
-                    </div>
-                    <div className="py-2.5 flex justify-between">
-                      <span className="text-[#5e7a76]">Estimated Reading Time</span>
-                      <span className="font-semibold text-[#183237]">{detailStats.readingTime}</span>
-                    </div>
-                    <div className="py-2.5 flex justify-between">
-                      <span className="text-[#5e7a76]">Vector Embedding Model</span>
-                      <span className="font-semibold text-[#183237]">models/gemini-embedding-001</span>
-                    </div>
-                    <div className="py-2.5 flex justify-between">
-                      <span className="text-[#5e7a76]">Index Timestamp</span>
-                      <span className="font-semibold text-[#183237]">{formatDate(detailDoc.created_at)}</span>
-                    </div>
-                    <div className="py-2.5 flex justify-between items-center">
-                      <span className="text-[#5e7a76]">Processing Pipeline Status</span>
-                      <span className="font-semibold text-emerald-600 flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                        100% Processed & Verified Grounded
-                      </span>
+
+                    {/* Level 1: Topics */}
+                    <div className="pl-4 border-l-2 border-[#d2ebe5] space-y-2">
+                      <button
+                        onClick={() => toggleNode('topics')}
+                        className="flex items-center gap-1.5 text-xs font-bold text-[#183237] hover:text-[#3c8b7e] cursor-pointer"
+                      >
+                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${expandedNodes.topics ? '' : '-rotate-90'}`} />
+                        <span>├── Topics ({detailTopics.length})</span>
+                      </button>
+
+                      {expandedNodes.topics && (
+                        <div className="pl-5 space-y-1">
+                          {detailTopics.slice(0, 6).map((t, idx) => (
+                            <div key={idx} className="text-[11px] text-[#5e7a76] flex items-center justify-between">
+                              <span>• {t.topic}</span>
+                              <span className="text-[10px] text-[#3c8b7e] font-semibold">{t.count} occurrences</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Level 2: Concepts */}
+                      <button
+                        onClick={() => toggleNode('concepts')}
+                        className="flex items-center gap-1.5 text-xs font-bold text-[#183237] hover:text-[#3c8b7e] cursor-pointer"
+                      >
+                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${expandedNodes.concepts ? '' : '-rotate-90'}`} />
+                        <span>├── Concepts & Terminology</span>
+                      </button>
+
+                      {expandedNodes.concepts && (
+                        <div className="pl-5 space-y-1">
+                          {detailEntities
+                            .filter((e) => e.category === 'key_term' || e.category === 'metric')
+                            .slice(0, 5)
+                            .map((e, idx) => (
+                              <div key={idx} className="text-[11px] text-[#5e7a76] flex items-center justify-between">
+                                <span className="font-semibold text-[#1c4e48]">• {e.value}</span>
+                                <span className="text-[9px] uppercase text-[#5e7a76]">{e.category}</span>
+                              </div>
+                            ))}
+                        </div>
+                      )}
+
+                      {/* Level 3: Entities */}
+                      <button
+                        onClick={() => toggleNode('entities')}
+                        className="flex items-center gap-1.5 text-xs font-bold text-[#183237] hover:text-[#3c8b7e] cursor-pointer"
+                      >
+                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${expandedNodes.entities ? '' : '-rotate-90'}`} />
+                        <span>└── Entities ({detailEntities.length})</span>
+                      </button>
+
+                      {expandedNodes.entities && (
+                        <div className="pl-5 space-y-1">
+                          {detailEntities.slice(0, 6).map((e, idx) => (
+                            <div key={idx} className="text-[11px] text-[#5e7a76] flex items-center justify-between">
+                              <span>• {e.value}</span>
+                              <span className="text-[9px] uppercase px-1 rounded bg-[#e8f4f1] text-[#1c4e48]">
+                                {e.category}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
               )}
-            </div>
-          </div>
 
-          {/* RIGHT PANEL: Quick AI Assistant & Study Triggers (Section 16) */}
-          <div className="w-80 bg-white p-5 overflow-y-auto space-y-4 hidden lg:block flex-shrink-0">
-            <div className="flex items-center gap-2 pb-3 border-b border-[#f0f4f3]">
-              <Sparkles className="w-4 h-4 text-[#3c8b7e]" />
-              <h3 className="text-xs font-bold text-[#183237] uppercase tracking-wider">AI Study & Actions</h3>
-            </div>
-
-            <div className="space-y-2">
-              <button
-                onClick={() => {
-                  onSelectDocForChat(detailDoc.id);
-                  onNavigateToChat();
-                }}
-                className="w-full text-left p-3 rounded-xl bg-[#f0f7f5] hover:bg-[#e0ece8] border border-[#d2ebe5] transition cursor-pointer group"
-              >
-                <div className="text-xs font-bold text-[#1c4e48] flex items-center justify-between">
-                  <span>Chat With This Document</span>
-                  <ArrowRight className="w-3.5 h-3.5 text-[#3c8b7e] group-hover:translate-x-0.5 transition-transform" />
+              {/* TAB 5: Sources / Chunks */}
+              {activeDetailTab === 'sources' && (
+                <div className="space-y-3">
+                  <div className="text-xs text-[#5e7a76]">
+                    Indexed into <strong>{detailChunks.length} semantic chunks</strong>:
+                  </div>
+                  <div className="space-y-2.5 max-h-[460px] overflow-y-auto pr-1">
+                    {detailChunks.map((chunk, idx) => (
+                      <div
+                        key={idx}
+                        className="p-3 rounded-xl bg-[#f8fbfa] border border-[#e8efed] space-y-1"
+                      >
+                        <div className="flex items-center justify-between text-[11px] font-bold text-[#1c4e48]">
+                          <span>Passage {idx + 1}</span>
+                          <span className="font-mono text-[#5e7a76]">{chunk.length} chars</span>
+                        </div>
+                        <p className="text-xs text-[#183237] leading-relaxed bg-white p-2.5 rounded-lg border border-[#eef4f2]">
+                          {chunk}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <p className="text-[11px] text-[#5e7a76] mt-0.5">
-                  Ask grounded questions strictly verified against this file.
-                </p>
-              </button>
+              )}
 
-              <button
-                onClick={() => onNavigateToStudy(detailDoc)}
-                className="w-full text-left p-3 rounded-xl bg-white hover:bg-[#f8fbfa] border border-[#e2ece9] hover:border-[#3c8b7e] transition cursor-pointer group"
-              >
-                <div className="text-xs font-bold text-[#183237] flex items-center justify-between">
-                  <span>Generate Flashcards & MCQs</span>
-                  <BookOpen className="w-3.5 h-3.5 text-[#3c8b7e]" />
+              {/* TAB 6: Details Metadata */}
+              {activeDetailTab === 'details' && (
+                <div className="p-4 rounded-2xl bg-[#f8fbfa] border border-[#e2ece9] space-y-3 text-xs">
+                  <div className="flex justify-between py-1.5 border-b border-[#e8efed]">
+                    <span className="text-[#5e7a76]">File Name</span>
+                    <span className="font-semibold text-[#183237]">{detailDoc.name}</span>
+                  </div>
+                  <div className="flex justify-between py-1.5 border-b border-[#e8efed]">
+                    <span className="text-[#5e7a76]">File Format</span>
+                    <span className="font-semibold uppercase text-[#1c4e48]">{detailDoc.file_type}</span>
+                  </div>
+                  <div className="flex justify-between py-1.5 border-b border-[#e8efed]">
+                    <span className="text-[#5e7a76]">File Size</span>
+                    <span className="font-semibold text-[#183237]">{formatBytes(detailDoc.file_size)}</span>
+                  </div>
+                  <div className="flex justify-between py-1.5 border-b border-[#e8efed]">
+                    <span className="text-[#5e7a76]">Estimated Pages</span>
+                    <span className="font-semibold text-[#183237]">{detailStats.pages}</span>
+                  </div>
+                  <div className="flex justify-between py-1.5 border-b border-[#e8efed]">
+                    <span className="text-[#5e7a76]">Word Count</span>
+                    <span className="font-semibold text-[#183237]">{detailStats.words.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between py-1.5 border-b border-[#e8efed]">
+                    <span className="text-[#5e7a76]">Reading Time</span>
+                    <span className="font-semibold text-[#183237]">{detailStats.readingTime}</span>
+                  </div>
+                  <div className="flex justify-between py-1.5 border-b border-[#e8efed]">
+                    <span className="text-[#5e7a76]">Semantic Chunks</span>
+                    <span className="font-semibold text-[#183237]">{detailStats.chunks}</span>
+                  </div>
+                  <div className="flex justify-between py-1.5 border-b border-[#e8efed]">
+                    <span className="text-[#5e7a76]">Upload Date</span>
+                    <span className="font-semibold text-[#183237]">{formatDate(detailDoc.created_at)}</span>
+                  </div>
+                  <div className="flex justify-between py-1.5">
+                    <span className="text-[#5e7a76]">Processing Status</span>
+                    <span className="font-semibold text-emerald-600 flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      Ready
+                    </span>
+                  </div>
+
+                  <div className="pt-3">
+                    <button
+                      onClick={() => {
+                        if (confirm(`Are you sure you want to delete ${detailDoc.name}?`)) {
+                          onDeleteDoc(detailDoc.id);
+                          setDetailDoc(null);
+                        }
+                      }}
+                      className="w-full py-2 rounded-xl text-red-600 hover:bg-red-50 text-xs font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer border border-transparent hover:border-red-200"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Delete Document</span>
+                    </button>
+                  </div>
                 </div>
-                <p className="text-[11px] text-[#5e7a76] mt-0.5">
-                  Interactive quizzes and memory cards with explanations.
-                </p>
-              </button>
-
-              <button
-                onClick={() => onNavigateToCompare()}
-                className="w-full text-left p-3 rounded-xl bg-white hover:bg-[#f8fbfa] border border-[#e2ece9] hover:border-[#3c8b7e] transition cursor-pointer group"
-              >
-                <div className="text-xs font-bold text-[#183237] flex items-center justify-between">
-                  <span>Compare With Another Document</span>
-                  <GitCompare className="w-3.5 h-3.5 text-[#3c8b7e]" />
-                </div>
-                <p className="text-[11px] text-[#5e7a76] mt-0.5">
-                  Side-by-side analysis of methodology, algorithms, and results.
-                </p>
-              </button>
-            </div>
-
-            {/* Quick Prompt Starters for this Document */}
-            <div className="pt-2 space-y-2">
-              <span className="text-[11px] font-bold text-[#5e7a76] uppercase tracking-wider block">
-                Suggested Prompts
-              </span>
-              {[
-                `Summarize key takeaways from ${detailDoc.name}`,
-                'What are the core metrics and conclusions?',
-                'Are there any limitations or open challenges mentioned?',
-              ].map((prompt, i) => (
-                <button
-                  key={i}
-                  onClick={() => {
-                    onSelectDocForChat(detailDoc.id);
-                    onNavigateToChat();
-                  }}
-                  className="w-full text-left p-2 rounded-lg bg-[#f8fbfa] hover:bg-[#f0f7f5] text-[11px] text-[#1c4e48] border border-[#e8efed] hover:border-[#3c8b7e]/50 transition cursor-pointer"
-                >
-                  "{prompt}"
-                </button>
-              ))}
+              )}
             </div>
           </div>
         </div>
@@ -696,16 +646,18 @@ export function DocumentsView({
     );
   }
 
-  // MAIN DOCUMENT REPOSITORY & MANAGEMENT VIEW
+  // -------------------------------------------------------------
+  // MAIN DOCUMENTS REPOSITORY VIEW (Section 5)
+  // -------------------------------------------------------------
   return (
     <div className="flex-1 flex flex-col h-full bg-[#f8fbfa] overflow-hidden">
-      {/* Top Action Bar */}
+      {/* Top Header & Search Bar */}
       <div className="p-4 sm:p-6 lg:p-8 pb-4 space-y-4 flex-shrink-0">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-xl sm:text-2xl font-bold text-[#183237]">Knowledge Base Documents</h1>
+            <h1 className="text-xl sm:text-2xl font-bold text-[#183237]">Documents</h1>
             <p className="text-xs sm:text-sm text-[#5e7a76] mt-0.5">
-              Manage, search, inspect, and select documents for multi-document RAG and comparative learning.
+              Manage, search, inspect, and select documents for multi-document RAG.
             </p>
           </div>
 
@@ -715,9 +667,9 @@ export function DocumentsView({
                 <span>{selectedDocIds.length} selected</span>
                 <button
                   onClick={onNavigateToChat}
-                  className="px-2 py-0.5 rounded-lg bg-[#1c4e48] text-white hover:bg-[#163d38] text-[11px] transition cursor-pointer"
+                  className="px-2.5 py-0.5 rounded-lg bg-[#1c4e48] text-white hover:bg-[#163d38] text-[11px] transition cursor-pointer"
                 >
-                  Query Selected ({selectedDocIds.length})
+                  Ask AI ({selectedDocIds.length})
                 </button>
                 <button
                   onClick={onClearSelectedDocIds}
@@ -733,7 +685,7 @@ export function DocumentsView({
               className="px-4 py-2 rounded-xl bg-[#1c4e48] text-white hover:bg-[#163d38] font-bold text-xs shadow-sm transition flex items-center gap-2 cursor-pointer"
             >
               <Upload className="w-4 h-4 text-[#7dd3c4]" />
-              <span>Upload Documents</span>
+              <span>Upload Document</span>
             </button>
           </div>
         </div>
@@ -745,7 +697,7 @@ export function DocumentsView({
             <Search className="w-4 h-4 text-[#5e7a76] absolute left-3 top-3" />
             <input
               type="text"
-              placeholder="Search documents by name or content summary…"
+              placeholder="Search documents by name or summary…"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-9 pr-3.5 py-2 rounded-xl bg-white border border-[#d4e0dd] text-xs text-[#183237] focus:outline-none focus:ring-2 focus:ring-[#3c8b7e]/30 transition"
@@ -782,7 +734,7 @@ export function DocumentsView({
               >
                 <option value="date">Newest</option>
                 <option value="name">Name (A-Z)</option>
-                <option value="size">File Size</option>
+                <option value="size">Size</option>
               </select>
             </div>
 
@@ -796,7 +748,6 @@ export function DocumentsView({
                 title="Grid view"
               >
                 <Layers className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline text-[11px]">Grid</span>
               </button>
               <button
                 onClick={() => setViewMode('table')}
@@ -806,24 +757,24 @@ export function DocumentsView({
                 title="Table view"
               >
                 <FileText className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline text-[11px]">Table</span>
               </button>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Documents Grid / List Area */}
+      {/* Documents Grid / Table */}
       <div className="flex-1 p-4 sm:p-6 lg:p-8 pt-0 overflow-y-auto">
         {filteredDocs.length === 0 ? (
-          <div className="p-12 text-center bg-white rounded-3xl border border-[#e2ece9] max-w-lg mx-auto space-y-4 my-8">
+          /* Empty State (Section 5 & 17) */
+          <div className="p-12 text-center bg-white rounded-3xl border border-[#e2ece9] max-w-md mx-auto space-y-4 my-8">
             <div className="w-14 h-14 rounded-2xl bg-[#e8f4f1] text-[#3c8b7e] flex items-center justify-center mx-auto">
               <FileText className="w-7 h-7" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-[#183237]">No documents match your filter</h3>
+              <h3 className="text-sm font-bold text-[#183237]">No documents yet</h3>
               <p className="text-xs text-[#5e7a76] mt-1">
-                Upload new PDF, DOCX, or TXT documents to index them into your knowledge base.
+                Upload your first document and let DocuMind AI turn it into searchable knowledge.
               </p>
             </div>
             <button
@@ -844,16 +795,17 @@ export function DocumentsView({
                     </th>
                     <th className="py-3 px-4">Document</th>
                     <th className="py-3 px-4">Type</th>
+                    <th className="py-3 px-4">Pages</th>
                     <th className="py-3 px-4">Size</th>
-                    <th className="py-3 px-4">Chunks</th>
-                    <th className="py-3 px-4">Indexed</th>
+                    <th className="py-3 px-4">Upload Date</th>
+                    <th className="py-3 px-4">Status</th>
                     <th className="py-3 px-4 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#f0f4f3]">
                   {filteredDocs.map((doc) => {
                     const isSelected = selectedDocIds.includes(doc.id);
-                    const chunksCount = doc.extracted_text ? splitIntoChunks(doc.extracted_text).length : 0;
+                    const pagesCount = estimatePages(doc.extracted_text || '');
                     return (
                       <tr
                         key={doc.id}
@@ -881,32 +833,35 @@ export function DocumentsView({
                           >
                             {doc.name}
                           </button>
-                          <p className="text-[11px] text-[#5e7a76] truncate max-w-sm">
-                            {doc.summary || 'Extracted document'}
-                          </p>
                         </td>
                         <td className="py-3 px-4">
                           <span className="px-2 py-0.5 rounded-md bg-[#e8f4f1] text-[#1c4e48] text-[10px] font-bold uppercase">
                             {doc.file_type || 'TXT'}
                           </span>
                         </td>
+                        <td className="py-3 px-4 text-[#5e7a76]">
+                          {pagesCount} {pagesCount === 1 ? 'page' : 'pages'}
+                        </td>
                         <td className="py-3 px-4 font-mono text-[#5e7a76] whitespace-nowrap">
                           {formatBytes(doc.file_size)}
                         </td>
-                        <td className="py-3 px-4 font-mono text-[#3c8b7e] whitespace-nowrap">
-                          ~{chunksCount}
-                        </td>
                         <td className="py-3 px-4 text-[#5e7a76] whitespace-nowrap">
                           {formatDate(doc.created_at)}
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                            Ready
+                          </span>
                         </td>
                         <td className="py-3 px-4 text-right whitespace-nowrap">
                           <div className="flex items-center justify-end gap-1.5">
                             <button
                               onClick={() => setDetailDoc(doc)}
-                              className="p-1.5 rounded-lg hover:bg-[#e0ece8] text-[#1c4e48] cursor-pointer"
-                              title="Inspect"
+                              className="px-2 py-1 rounded-lg text-xs font-semibold text-[#1c4e48] hover:bg-[#e8f4f1] transition cursor-pointer"
+                              title="Open Document"
                             >
-                              <Eye className="w-3.5 h-3.5" />
+                              Open
                             </button>
                             <button
                               onClick={() => onNavigateToStudy(doc)}
@@ -944,13 +899,11 @@ export function DocumentsView({
             </div>
           </div>
         ) : (
+          /* Clean Document Cards (Section 5: File name, File type, Pages, Upload date, Processing status) */
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {filteredDocs.map((doc) => {
               const isSelected = selectedDocIds.includes(doc.id);
-              const chunksCount = doc.extracted_text ? splitIntoChunks(doc.extracted_text).length : 0;
-              const wordsCount = doc.extracted_text
-                ? doc.extracted_text.trim().split(/\s+/).filter(Boolean).length
-                : 0;
+              const pagesCount = estimatePages(doc.extracted_text || '');
 
               return (
                 <div
@@ -962,7 +915,7 @@ export function DocumentsView({
                   }`}
                 >
                   <div className="space-y-3">
-                    {/* Header: File type, Checkbox, Actions */}
+                    {/* Header: Checkbox, File type, File name, Delete */}
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-2.5 min-w-0">
                         <button
@@ -980,6 +933,7 @@ export function DocumentsView({
                         <span className="px-2 py-0.5 rounded-md bg-[#e8f4f1] text-[#1c4e48] text-[10px] font-bold uppercase flex-shrink-0">
                           {doc.file_type || 'TXT'}
                         </span>
+
                         <h3
                           onClick={() => setDetailDoc(doc)}
                           className="text-xs font-bold text-[#183237] group-hover:text-[#1c4e48] truncate transition cursor-pointer"
@@ -1000,43 +954,47 @@ export function DocumentsView({
                       </button>
                     </div>
 
-                    {/* Summary Preview */}
-                    <p className="text-xs text-[#5e7a76] line-clamp-3 leading-relaxed">
-                      {doc.summary || 'Summary generated automatically from extracted text.'}
-                    </p>
-
-                    {/* Document Stats Badges */}
-                    <div className="flex flex-wrap gap-2 text-[10px] text-[#5e7a76] pt-1">
-                      <span className="px-2 py-0.5 rounded-md bg-[#f8fbfa] border border-[#e8efed]">
-                        {formatBytes(doc.file_size)}
-                      </span>
-                      <span className="px-2 py-0.5 rounded-md bg-[#f8fbfa] border border-[#e8efed]">
-                        ~{chunksCount} chunks
-                      </span>
-                      <span className="px-2 py-0.5 rounded-md bg-[#f8fbfa] border border-[#e8efed]">
-                        {wordsCount.toLocaleString()} words
-                      </span>
-                      <span className="px-2 py-0.5 rounded-md bg-[#f8fbfa] border border-[#e8efed]">
-                        {formatDate(doc.created_at)}
-                      </span>
+                    {/* Clean Metadata (Section 5: File name, File type, Pages, Upload date, Processing status) */}
+                    <div className="grid grid-cols-2 gap-2 text-xs py-2 px-3 rounded-xl bg-[#f8fbfa] border border-[#eef4f2]">
+                      <div>
+                        <span className="text-[10px] text-[#5e7a76] uppercase tracking-wider block">Pages</span>
+                        <span className="font-semibold text-[#183237]">
+                          {pagesCount} {pagesCount === 1 ? 'page' : 'pages'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-[#5e7a76] uppercase tracking-wider block">Upload Date</span>
+                        <span className="font-semibold text-[#183237]">{formatDate(doc.created_at)}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-[#5e7a76] uppercase tracking-wider block">Size</span>
+                        <span className="font-semibold text-[#183237]">{formatBytes(doc.file_size)}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-[#5e7a76] uppercase tracking-wider block">Status</span>
+                        <span className="inline-flex items-center gap-1 font-semibold text-emerald-600 text-[11px]">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                          Ready
+                        </span>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Card Bottom Action Bar */}
+                  {/* Card Bottom Actions */}
                   <div className="flex items-center justify-between gap-2 pt-4 mt-3 border-t border-[#f4f7f6]">
                     <button
                       onClick={() => setDetailDoc(doc)}
-                      className="px-2.5 py-1.5 rounded-lg bg-[#f0f7f5] hover:bg-[#e0ece8] text-[#1c4e48] text-xs font-semibold transition flex items-center gap-1 cursor-pointer"
+                      className="px-3 py-1.5 rounded-lg bg-[#f0f7f5] hover:bg-[#e0ece8] text-[#1c4e48] text-xs font-semibold transition flex items-center gap-1 cursor-pointer"
                     >
                       <Eye className="w-3.5 h-3.5 text-[#3c8b7e]" />
-                      <span>Inspect</span>
+                      <span>Open</span>
                     </button>
 
                     <div className="flex items-center gap-1.5">
                       <button
                         onClick={() => onNavigateToStudy(doc)}
                         className="px-2.5 py-1.5 rounded-lg bg-white border border-[#d4e0dd] hover:border-[#3c8b7e] text-[#183237] text-xs font-semibold transition flex items-center gap-1 cursor-pointer"
-                        title="Generate study material"
+                        title="Study Mode"
                       >
                         <BookOpen className="w-3.5 h-3.5 text-[#3c8b7e]" />
                         <span>Study</span>
@@ -1047,7 +1005,7 @@ export function DocumentsView({
                           onNavigateToChat();
                         }}
                         className="px-2.5 py-1.5 rounded-lg bg-[#1c4e48] hover:bg-[#163d38] text-white text-xs font-semibold transition flex items-center gap-1 cursor-pointer"
-                        title="Chat with document"
+                        title="Chat"
                       >
                         <MessageSquare className="w-3.5 h-3.5 text-[#7dd3c4]" />
                         <span>Chat</span>
