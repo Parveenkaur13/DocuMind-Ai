@@ -644,6 +644,56 @@ export function getActiveGeminiApiKey(): string {
   return env?.VITE_GEMINI_API_KEY || env?.GEMINI_API_KEY || '';
 }
 
+export function getBackendBaseUrl(): string {
+  const envUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BACKEND_URL) || '';
+
+  if (typeof window !== 'undefined') {
+    // If the web application is served over HTTPS, avoid insecure http:// requests which are blocked as mixed-content by mobile browsers
+    if (window.location.protocol === 'https:' && typeof envUrl === 'string' && envUrl.startsWith('http://')) {
+      return '';
+    }
+    // If client is on mobile / remote host (hostname is not localhost) and envUrl points to localhost,
+    // we must use relative path '' so requests target the host server rather than attempting to connect to port 8000 on the mobile device itself.
+    if (
+      window.location.hostname !== 'localhost' &&
+      window.location.hostname !== '127.0.0.1' &&
+      typeof envUrl === 'string' &&
+      envUrl.includes('localhost')
+    ) {
+      return '';
+    }
+    if (envUrl && typeof envUrl === 'string' && envUrl.trim().length > 0 && !envUrl.includes('localhost')) {
+      return envUrl.trim().replace(/\/+$/, '');
+    }
+    // By default in browser environments, relative '' routes directly to /api/... on the same origin.
+    // In dev: Vite proxies /api to http://127.0.0.1:8000
+    // In production: Vercel routes /api to serverless functions in /api/
+    return '';
+  }
+
+  return envUrl || 'http://127.0.0.1:8000';
+}
+
+export function formatAIError(err: unknown, docName: string, featureName: string): string {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    return 'You appear to be offline. Please check your internet connection.';
+  }
+  const msg = err instanceof Error ? err.message : String(err || '');
+  if (msg.includes('TimeoutError') || msg.includes('AbortError') || msg.includes('timed out')) {
+    return `${featureName} generation timed out. Please try again.`;
+  }
+  if (msg.includes('rate limit') || msg.includes('quota') || msg.includes('429')) {
+    return 'Google Gemini API rate limit or quota exceeded. Please wait a moment and try again.';
+  }
+  if (msg.includes('401') || msg.includes('403') || msg.includes('authentication failed') || msg.includes('API key is not configured')) {
+    return 'Gemini API authentication failed or key is missing. Please verify your API key in Settings or Vercel environment variables.';
+  }
+  if (msg.includes('does not contain enough text') || msg.includes('no extracted text')) {
+    return `"${docName}" does not contain enough readable text for ${featureName.toLowerCase()}.`;
+  }
+  return msg || `Unable to generate ${featureName.toLowerCase()} for "${docName}".`;
+}
+
 export function setCustomGeminiApiKey(key: string): void {
   if (typeof window !== 'undefined') {
     if (key.trim()) {
@@ -1013,16 +1063,15 @@ Politely inform the user that their uploaded documents do not contain informatio
     };
   }
 
-  // 2. Try local Python backend if available
+  // 2. Try unified production / local backend
   try {
-    const backendUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BACKEND_URL) || '';
-    if (backendUrl) {
-      const res = await fetch(`${backendUrl}/api/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, context, citations, mode }),
-        signal: AbortSignal.timeout(3000),
-      });
+    const backendUrl = getBackendBaseUrl();
+    const res = await fetch(`${backendUrl}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question, context, citations, mode }),
+      signal: AbortSignal.timeout(30000),
+    });
       if (res.ok) {
         const data = await res.json();
         if (data.answer) {
@@ -1035,7 +1084,6 @@ Politely inform the user that their uploaded documents do not contain informatio
           };
         }
       }
-    }
   } catch {
     // continue to cloud Gemini
   }
@@ -1589,19 +1637,22 @@ export async function generateFlashcardsAI(
     throw new Error(`The document "${docName}" does not contain enough text to generate flashcards.`);
   }
 
-  // 1. Try local Python backend if available
-  const backendUrl =
-    (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BACKEND_URL) || 'http://localhost:8000';
+  // 1. Try unified production / local backend
+  const baseUrl = getBackendBaseUrl();
+  let backendError: string | null = null;
+
   try {
-    const res = await fetch(`${backendUrl}/api/flashcards`, {
+    const res = await fetch(`${baseUrl}/api/flashcards`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        text: cleanText,
+        text: cleanText.slice(0, 14000),
         filename: docName,
         count,
       }),
+      signal: AbortSignal.timeout(45000),
     });
+
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data.flashcards) && data.flashcards.length > 0) {
@@ -1612,12 +1663,22 @@ export async function generateFlashcardsAI(
           sourceSnippet: item.sourceSnippet ? String(item.sourceSnippet) : undefined,
         }));
       }
+    } else {
+      const errJson = await res.json().catch(() => null);
+      backendError = errJson?.error || errJson?.details || `Backend returned HTTP ${res.status}`;
     }
-  } catch {
-    // Proceed to direct Gemini call
+  } catch (err: unknown) {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      throw new Error('You appear to be offline. Please check your internet connection.');
+    }
+    const errObj = err as { name?: string; message?: string };
+    if (errObj?.name === 'TimeoutError' || errObj?.name === 'AbortError') {
+      throw new Error('Flashcard generation timed out. Please try again.');
+    }
+    backendError = errObj?.message || String(err);
   }
 
-  // 2. Direct Google Gemini REST API call
+  // 2. Direct Google Gemini REST API call (fallback for local client keys)
   const geminiKey = getActiveGeminiApiKey();
   if (geminiKey) {
     const prompt = `You are an elite academic educator. Formulate ${count} high-impact, grounded study flashcards based strictly on "${docName}".
@@ -1634,27 +1695,29 @@ Return ONLY a valid JSON array of objects with the exact schema:
 ]
 
 DOCUMENT:
-${cleanText.slice(0, 6000)}
+${cleanText.slice(0, 8000)}
 
 JSON ARRAY:`;
 
-    const raw = await callGemini(prompt, geminiKey, 'gemini-3.5-flash-lite', 1800);
-    if (raw) {
-      const parsed = extractJsonArray<Record<string, unknown>>(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.map((item, idx) => ({
-          id: String(item.id || idx + 1),
-          question: String(item.question || ''),
-          answer: String(item.answer || ''),
-          sourceSnippet: item.sourceSnippet ? String(item.sourceSnippet) : undefined,
-        }));
+    try {
+      const raw = await callGemini(prompt, geminiKey, 'gemini-3.5-flash-lite', 1800);
+      if (raw) {
+        const parsed = extractJsonArray<Record<string, unknown>>(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((item, idx) => ({
+            id: String(item.id || idx + 1),
+            question: String(item.question || ''),
+            answer: String(item.answer || ''),
+            sourceSnippet: item.sourceSnippet ? String(item.sourceSnippet) : undefined,
+          }));
+        }
       }
+    } catch {
+      // Fall through to error
     }
   }
 
-  throw new Error(
-    `Unable to generate AI flashcards for "${docName}". Please check your connection or verify that the Gemini API is accessible.`,
-  );
+  throw new Error(formatAIError(backendError, docName, 'Flashcards'));
 }
 
 // -------------------------------------------------------------
@@ -1670,19 +1733,22 @@ export async function generateQuizAI(
     throw new Error(`The document "${docName}" does not contain enough text to generate MCQs.`);
   }
 
-  // 1. Try local Python backend if available
-  const backendUrl =
-    (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BACKEND_URL) || 'http://localhost:8000';
+  // 1. Try unified production / local backend
+  const baseUrl = getBackendBaseUrl();
+  let backendError: string | null = null;
+
   try {
-    const res = await fetch(`${backendUrl}/api/quiz`, {
+    const res = await fetch(`${baseUrl}/api/quiz`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        text: cleanText,
+        text: cleanText.slice(0, 14000),
         filename: docName,
         count,
       }),
+      signal: AbortSignal.timeout(45000),
     });
+
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data.questions) && data.questions.length > 0) {
@@ -1703,12 +1769,22 @@ export async function generateQuizAI(
           };
         });
       }
+    } else {
+      const errJson = await res.json().catch(() => null);
+      backendError = errJson?.error || errJson?.details || `Backend returned HTTP ${res.status}`;
     }
-  } catch {
-    // Proceed to direct Gemini call
+  } catch (err: unknown) {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      throw new Error('You appear to be offline. Please check your internet connection.');
+    }
+    const errObj = err as { name?: string; message?: string };
+    if (errObj?.name === 'TimeoutError' || errObj?.name === 'AbortError') {
+      throw new Error('MCQ quiz generation timed out. Please try again.');
+    }
+    backendError = errObj?.message || String(err);
   }
 
-  // 2. Direct Google Gemini REST API call
+  // 2. Direct Google Gemini REST API call (fallback for custom client key)
   const geminiKey = getActiveGeminiApiKey();
   if (geminiKey) {
     const prompt = `You are a certified university exam creator. Formulate ${count} challenging, high-yield multiple-choice questions based strictly on "${docName}".
@@ -1728,37 +1804,39 @@ CRITICAL REQUIREMENTS:
 ]
 
 DOCUMENT TEXT:
-${cleanText.slice(0, 7000)}
+${cleanText.slice(0, 8000)}
 
 JSON ARRAY:`;
 
-    const raw = await callGemini(prompt, geminiKey, 'gemini-3.5-flash-lite', 2800);
-    if (raw) {
-      const parsed = extractJsonArray<Record<string, unknown>>(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.map((item, idx) => {
-          let opts: string[] = Array.isArray(item.options) ? item.options.map(String) : [];
-          if (opts.length > 4) opts = opts.slice(0, 4);
-          while (opts.length < 4) opts.push('None of the above');
+    try {
+      const raw = await callGemini(prompt, geminiKey, 'gemini-3.5-flash-lite', 2800);
+      if (raw) {
+        const parsed = extractJsonArray<Record<string, unknown>>(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((item, idx) => {
+            let opts: string[] = Array.isArray(item.options) ? item.options.map(String) : [];
+            if (opts.length > 4) opts = opts.slice(0, 4);
+            while (opts.length < 4) opts.push('None of the above');
 
-          let cIdx = typeof item.correctIndex === 'number' ? item.correctIndex : 0;
-          if (cIdx < 0 || cIdx >= opts.length) cIdx = 0;
+            let cIdx = typeof item.correctIndex === 'number' ? item.correctIndex : 0;
+            if (cIdx < 0 || cIdx >= opts.length) cIdx = 0;
 
-          return {
-            id: String(item.id || idx + 1),
-            question: String(item.question || ''),
-            options: opts,
-            correctIndex: cIdx,
-            explanation: String(item.explanation || 'Directly grounded in the source text.'),
-          };
-        });
+            return {
+              id: String(item.id || idx + 1),
+              question: String(item.question || ''),
+              options: opts,
+              correctIndex: cIdx,
+              explanation: String(item.explanation || 'Directly grounded in the source text.'),
+            };
+          });
+        }
       }
+    } catch {
+      // Fall through to error
     }
   }
 
-  throw new Error(
-    `Unable to generate real AI multiple-choice questions for "${docName}". Please check your connection or verify that the Gemini API is accessible.`,
-  );
+  throw new Error(formatAIError(backendError, docName, 'MCQs'));
 }
 
 // -------------------------------------------------------------
@@ -1766,9 +1844,52 @@ JSON ARRAY:`;
 // -------------------------------------------------------------
 export async function generatePodcastAI(docText: string, docName: string): Promise<PodcastDialogue[]> {
   const cleanText = docText?.trim() || '';
-  const geminiKey = getActiveGeminiApiKey();
+  if (!cleanText || cleanText.length < 20) {
+    throw new Error(`The document "${docName}" does not contain enough text to generate an audio podcast.`);
+  }
 
-  if (geminiKey && cleanText.length > 50) {
+  // 1. Try unified production / local backend
+  const baseUrl = getBackendBaseUrl();
+  let backendError: string | null = null;
+
+  try {
+    const res = await fetch(`${baseUrl}/api/podcast`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: cleanText.slice(0, 10000),
+        filename: docName,
+      }),
+      signal: AbortSignal.timeout(45000),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.dialogue) && data.dialogue.length > 0) {
+        return data.dialogue.map((turn: Record<string, unknown>) => ({
+          speaker: turn.speaker === 'Jordan' ? 'Jordan' : 'Alex',
+          text: String(turn.text || ''),
+          topic: turn.topic ? String(turn.topic) : undefined,
+        }));
+      }
+    } else {
+      const errJson = await res.json().catch(() => null);
+      backendError = errJson?.error || errJson?.details || `Backend returned HTTP ${res.status}`;
+    }
+  } catch (err: unknown) {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      throw new Error('You appear to be offline. Please check your internet connection.');
+    }
+    const errObj = err as { name?: string; message?: string };
+    if (errObj?.name === 'TimeoutError' || errObj?.name === 'AbortError') {
+      throw new Error('Podcast generation timed out. Please try again.');
+    }
+    backendError = errObj?.message || String(err);
+  }
+
+  // 2. Direct Google Gemini REST API call (fallback for custom client key)
+  const geminiKey = getActiveGeminiApiKey();
+  if (geminiKey) {
     const prompt = `You are a dynamic podcast producer creating a 2-host audio overview (similar to Google NotebookLM).
 Hosts:
 - "Alex": Deep, insightful host who introduces key themes, provides context, and synthesizes big-picture implications.
@@ -1779,7 +1900,7 @@ Return ONLY a valid JSON array of objects:
 [
   {
     "speaker": "Alex",
-    "text": "Hey everyone, welcome back. Today we're diving into an interesting document called..."
+    "text": "Welcome in everyone! Today we're diving into..."
   },
   {
     "speaker": "Jordan",
@@ -1788,12 +1909,12 @@ Return ONLY a valid JSON array of objects:
 ]
 
 DOCUMENT TEXT:
-${cleanText.slice(0, 5000)}
+${cleanText.slice(0, 6000)}
 
 JSON ARRAY:`;
 
     try {
-      const raw = await callGemini(prompt, geminiKey, 'gemini-3.5-flash-lite', 1600);
+      const raw = await callGemini(prompt, geminiKey, 'gemini-3.5-flash-lite', 1800);
       if (raw) {
         const parsed = extractJsonArray<Record<string, unknown>>(raw);
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -1809,9 +1930,7 @@ JSON ARRAY:`;
     }
   }
 
-  throw new Error(
-    `Unable to generate audio podcast dialogue for "${docName}". Please check your network connection or API configuration.`,
-  );
+  throw new Error(formatAIError(backendError, docName, 'Audio Podcast'));
 }
 
 // -------------------------------------------------------------
@@ -1839,31 +1958,44 @@ export async function generateStudyMaterialAI(
     throw new Error(`The document "${docName}" does not contain enough text to generate study material.`);
   }
 
-  // 1. Try local Python backend if available
-  const backendUrl =
-    (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BACKEND_URL) || 'http://localhost:8000';
+  // 1. Try unified production / local backend
+  const baseUrl = getBackendBaseUrl();
+  let backendError: string | null = null;
+
   try {
-    const res = await fetch(`${backendUrl}/api/study`, {
+    const res = await fetch(`${baseUrl}/api/study`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        text: cleanText,
+        text: cleanText.slice(0, 16000),
         filename: docName,
         type,
         difficulty,
       }),
+      signal: AbortSignal.timeout(45000),
     });
+
     if (res.ok) {
       const data = await res.json();
       if (data.result && typeof data.result === 'string') {
         return data.result;
       }
+    } else {
+      const errJson = await res.json().catch(() => null);
+      backendError = errJson?.error || errJson?.details || `Backend returned HTTP ${res.status}`;
     }
-  } catch {
-    // Proceed to direct Gemini call
+  } catch (err: unknown) {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      throw new Error('You appear to be offline. Please check your internet connection.');
+    }
+    const errObj = err as { name?: string; message?: string };
+    if (errObj?.name === 'TimeoutError' || errObj?.name === 'AbortError') {
+      throw new Error('Study material generation timed out after 45 seconds. Please try again.');
+    }
+    backendError = errObj?.message || String(err);
   }
 
-  // 2. Direct Google Gemini REST API call
+  // 2. Direct Google Gemini REST API call (fallback for custom client key)
   const geminiKey = getActiveGeminiApiKey();
 
   const difficultyInstructions: Record<StudyDifficulty, string> = {
@@ -1953,13 +2085,15 @@ ${cleanText.slice(0, 8000)}
 
 STUDY MATERIAL:`;
 
-    const res = await callGemini(fullPrompt, geminiKey, 'gemini-3.5-flash-lite', 2400);
-    if (res) return res;
+    try {
+      const res = await callGemini(fullPrompt, geminiKey, 'gemini-3.5-flash-lite', 2400);
+      if (res) return res;
+    } catch {
+      // Fall through to error
+    }
   }
 
-  throw new Error(
-    `Unable to generate real AI study material for "${docName}". Please check your internet connection or verify that the Gemini API is accessible.`,
-  );
+  throw new Error(formatAIError(backendError, docName, type.replace(/_/g, ' ')));
 }
 
 

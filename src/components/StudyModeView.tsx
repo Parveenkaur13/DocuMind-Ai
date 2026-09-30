@@ -87,9 +87,31 @@ export function StudyModeView({
     ? localStorage.getItem('documind_study_difficulty')
     : null) as StudyDifficulty | null;
 
+  // Helper to retrieve document content with fallback from extracted_text to summary
+  const getDocText = useCallback((doc: DocItem | null): string => {
+    if (!doc) return '';
+    const text = (doc.extracted_text || '').trim();
+    if (text.length >= 20) return text;
+    const summary = (doc.summary || '').trim();
+    if (summary.length >= 20) return summary;
+    return text || summary;
+  }, []);
+
   const [activeDocId, setActiveDocId] = useState<string>(selectedDoc?.id || '');
   const [difficulty, setDifficulty] = useState<StudyDifficulty>(savedDifficulty || 'intermediate');
   const [activeTab, setActiveTab] = useState<StudyTab>('summary');
+
+  // Auto-select first document if none selected or if activeDocId not found in documents
+  useEffect(() => {
+    if (documents.length > 0) {
+      const activeExists = activeDocId && documents.some((d) => d.id === activeDocId);
+      if (!activeExists) {
+        const target = (selectedDoc && documents.some((d) => d.id === selectedDoc.id)) ? selectedDoc : documents[0];
+        setActiveDocId(target.id);
+        onSelectDoc(target);
+      }
+    }
+  }, [documents, activeDocId, selectedDoc, onSelectDoc]);
 
   // Currently selected document object
   const currentDoc = activeDocId ? documents.find((d) => d.id === activeDocId) || null : null;
@@ -160,8 +182,9 @@ export function StudyModeView({
     async (type: StudyMaterialType, force = false) => {
       if (!currentDoc) return;
 
-      if (!currentDoc.extracted_text || currentDoc.extracted_text.trim().length < 20) {
-        setTextError('This document has no extracted text to generate study material. Please re-upload or select another document.');
+      const docText = getDocText(currentDoc);
+      if (docText.length < 20) {
+        setTextError('This document has insufficient extracted text or summary content to generate study material. Please re-upload or select another document.');
         return;
       }
 
@@ -176,7 +199,7 @@ export function StudyModeView({
 
       try {
         const res = await generateStudyMaterialAI(
-          currentDoc.extracted_text,
+          docText,
           currentDoc.name,
           type,
           difficulty,
@@ -190,7 +213,7 @@ export function StudyModeView({
         setLoadingText(false);
       }
     },
-    [currentDoc, difficulty, generatedText, showToast],
+    [currentDoc, difficulty, generatedText, getDocText, showToast],
   );
 
   // Load Flashcards
@@ -198,8 +221,9 @@ export function StudyModeView({
     async (force = false) => {
       if (!currentDoc) return;
 
-      if (!currentDoc.extracted_text || currentDoc.extracted_text.trim().length < 20) {
-        setCardsError('This document has no extracted text to generate flashcards.');
+      const docText = getDocText(currentDoc);
+      if (docText.length < 20) {
+        setCardsError('This document has insufficient extracted text or summary content to generate flashcards.');
         return;
       }
 
@@ -212,7 +236,7 @@ export function StudyModeView({
       setCardsError(null);
 
       try {
-        const cards = await generateFlashcardsAI(currentDoc.extracted_text, currentDoc.name, 6);
+        const cards = await generateFlashcardsAI(docText, currentDoc.name, 6);
         setFlashcardsByDoc((prev) => ({ ...prev, [currentDoc.id]: cards }));
         setCardIndex(0);
         setIsFlipped(false);
@@ -224,7 +248,7 @@ export function StudyModeView({
         setLoadingCards(false);
       }
     },
-    [currentDoc, flashcardsByDoc, showToast],
+    [currentDoc, flashcardsByDoc, getDocText, showToast],
   );
 
   // Load MCQs
@@ -232,8 +256,9 @@ export function StudyModeView({
     async (force = false) => {
       if (!currentDoc) return;
 
-      if (!currentDoc.extracted_text || currentDoc.extracted_text.trim().length < 20) {
-        setQuizError('This document has no extracted text to generate MCQs.');
+      const docText = getDocText(currentDoc);
+      if (docText.length < 20) {
+        setQuizError('This document has insufficient extracted text or summary content to generate MCQs.');
         return;
       }
 
@@ -246,7 +271,7 @@ export function StudyModeView({
       setQuizError(null);
 
       try {
-        const qs = await generateQuizAI(currentDoc.extracted_text, currentDoc.name, 10);
+        const qs = await generateQuizAI(docText, currentDoc.name, 10);
         setQuizByDoc((prev) => ({ ...prev, [currentDoc.id]: qs }));
         setSelectedAnswers({});
       } catch (err: unknown) {
@@ -257,7 +282,7 @@ export function StudyModeView({
         setLoadingQuiz(false);
       }
     },
-    [currentDoc, quizByDoc, showToast],
+    [currentDoc, quizByDoc, getDocText, showToast],
   );
 
   // Load Podcast
@@ -265,8 +290,9 @@ export function StudyModeView({
     async (force = false) => {
       if (!currentDoc) return;
 
-      if (!currentDoc.extracted_text || currentDoc.extracted_text.trim().length < 20) {
-        setPodcastError('This document has no extracted text to generate audio podcast.');
+      const docText = getDocText(currentDoc);
+      if (docText.length < 20) {
+        setPodcastError('This document has insufficient extracted text or summary content to generate audio podcast.');
         return;
       }
 
@@ -279,7 +305,7 @@ export function StudyModeView({
       setPodcastError(null);
 
       try {
-        const turns = await generatePodcastAI(currentDoc.extracted_text, currentDoc.name);
+        const turns = await generatePodcastAI(docText, currentDoc.name);
         setPodcastByDoc((prev) => ({ ...prev, [currentDoc.id]: turns }));
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Failed to generate podcast dialogue';
@@ -289,7 +315,7 @@ export function StudyModeView({
         setLoadingPodcast(false);
       }
     },
-    [currentDoc, podcastByDoc, showToast],
+    [currentDoc, podcastByDoc, getDocText, showToast],
   );
 
   // Auto-fetch data on active tab or doc change
@@ -476,7 +502,7 @@ export function StudyModeView({
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-[11px] text-[#5e7a76]">
-                    <span>{(doc.extracted_text?.length || 0).toLocaleString()} chars</span>
+                    <span>{(getDocText(doc).length || 0).toLocaleString()} chars</span>
                     <span className="text-[#3c8b7e] font-semibold group-hover:translate-x-0.5 transition-transform flex items-center gap-1">
                       <span>Study now</span>
                       <ArrowRight className="w-3 h-3" />
@@ -532,38 +558,38 @@ export function StudyModeView({
       {/* =========================================================================
           TOP HEADER: DOCUMENT SELECTOR, DIFFICULTY, TAB SWITCHER
           ========================================================================= */}
-      <div className="p-4 sm:p-5 bg-white border-b border-[#e2ece9] flex-shrink-0 space-y-3.5">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+      <div className="p-3 sm:p-5 bg-white border-b border-[#e2ece9] flex-shrink-0 space-y-3">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           {/* Title & Document Badge */}
           <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-xl bg-[#e8f4f1] text-[#1c4e48] flex items-center justify-center font-bold flex-shrink-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#e8f4f1] text-[#1c4e48] flex items-center justify-center font-bold flex-shrink-0">
               <GraduationCap className="w-5 h-5 text-[#3c8b7e]" />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-base sm:text-lg font-bold text-[#183237] truncate">
+                <h1 className="text-sm sm:text-lg font-bold text-[#183237] truncate">
                   Personalized Study Studio
                 </h1>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#e8f4f1] text-[#1c4e48] uppercase tracking-wider">
                   AI Grounded
                 </span>
               </div>
-              <p className="text-xs text-[#5e7a76] truncate">
-                Active Document: <strong className="text-[#183237]">{currentDoc.name}</strong> •{' '}
-                {(currentDoc.extracted_text?.length || 0).toLocaleString()} characters extracted
+              <p className="text-[11px] sm:text-xs text-[#5e7a76] truncate">
+                Active: <strong className="text-[#183237]">{currentDoc.name}</strong> •{' '}
+                {(getDocText(currentDoc).length).toLocaleString()} chars
               </p>
             </div>
           </div>
 
           {/* Controls: Document Dropdown, Difficulty Dropdown, Export/Actions */}
-          <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
             {/* Document Selector Dropdown */}
-            <div className="flex items-center gap-1.5 bg-[#f8fbfa] border border-[#d4e0dd] px-2.5 py-1.5 rounded-xl text-xs">
+            <div className="flex items-center gap-1.5 bg-[#f8fbfa] border border-[#d4e0dd] px-2.5 py-1.5 rounded-xl text-xs flex-1 sm:flex-initial min-w-[130px] max-w-[200px]">
               <FileText className="w-3.5 h-3.5 text-[#3c8b7e] flex-shrink-0" />
               <select
                 value={activeDocId}
                 onChange={(e) => handleDocumentChange(e.target.value)}
-                className="bg-transparent text-xs font-semibold text-[#183237] focus:outline-none cursor-pointer max-w-[170px] truncate"
+                className="bg-transparent text-xs font-semibold text-[#183237] focus:outline-none cursor-pointer w-full truncate"
                 title="Switch active document"
               >
                 {documents.map((d) => (
@@ -575,18 +601,24 @@ export function StudyModeView({
             </div>
 
             {/* Difficulty Selector Dropdown */}
-            <div className="flex items-center gap-1.5 bg-[#f8fbfa] border border-[#d4e0dd] px-2.5 py-1.5 rounded-xl text-xs">
+            <div className="flex items-center gap-1.5 bg-[#f8fbfa] border border-[#d4e0dd] px-2.5 py-1.5 rounded-xl text-xs flex-1 sm:flex-initial min-w-[110px]">
               <Award className="w-3.5 h-3.5 text-[#3c8b7e] flex-shrink-0" />
               <select
                 value={difficulty}
-                onChange={(e) => setDifficulty(e.target.value as StudyDifficulty)}
-                className="bg-transparent text-xs font-semibold text-[#183237] focus:outline-none cursor-pointer"
+                onChange={(e) => {
+                  const val = e.target.value as StudyDifficulty;
+                  setDifficulty(val);
+                  if (typeof window !== 'undefined') {
+                    localStorage.setItem('documind_study_difficulty', val);
+                  }
+                }}
+                className="bg-transparent text-xs font-semibold text-[#183237] focus:outline-none cursor-pointer w-full"
                 title="Select study depth / difficulty"
               >
-                <option value="beginner">Beginner (Foundational)</option>
-                <option value="intermediate">Intermediate (Standard)</option>
-                <option value="advanced">Advanced (Deep Dive)</option>
-                <option value="exam_oriented">Exam-Oriented (High-Yield)</option>
+                <option value="beginner">Beginner</option>
+                <option value="intermediate">Intermediate</option>
+                <option value="advanced">Advanced</option>
+                <option value="exam_oriented">Exam-Oriented</option>
               </select>
             </div>
 
@@ -598,12 +630,13 @@ export function StudyModeView({
             >
               <MessageSquare className="w-3.5 h-3.5 text-[#3c8b7e]" />
               <span className="hidden sm:inline">Ask in Chat</span>
+              <span className="sm:hidden">Chat</span>
             </button>
           </div>
         </div>
 
         {/* Study Navigation Tabs */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar touch-pan-x -mx-1 px-1">
           {TAB_CONFIG.map((tab) => {
             const TabIcon = tab.icon;
             const isActive = activeTab === tab.id;

@@ -7,6 +7,7 @@ Provides endpoints for Chat, Summarization, Study Material, Flashcards, and MCQs
 import os
 import json
 import re
+import logging
 from pathlib import Path
 from dotenv import load_dotenv
 from starlette.applications import Starlette
@@ -15,6 +16,10 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
+
+# Setup backend logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+logger = logging.getLogger("DocuMindBackend")
 
 # Load .env from project root
 env_path = Path(__file__).resolve().parent.parent / '.env'
@@ -29,22 +34,20 @@ GEMINI_API_KEY = (
 MODELS = [
     'gemini-3.5-flash-lite',
     'gemini-flash-latest',
-    'gemini-3.8-flash',
-    'gemini-3.6-flash',
-    'gemini-3.5-flash',
-    'gemini-3.1-flash-lite',
-    'gemini-flash-lite-latest',
-    'gemini-3-flash-preview',
+    'gemini-2.0-flash',
     'gemini-2.5-flash',
 ]
 
 def call_gemini_rest(prompt: str, max_tokens: int = 1500, system_instruction: str = "") -> str:
-    """Calls Gemini REST API directly with active models failover."""
+    """Calls Gemini REST API directly with active models failover and detailed logging."""
     import urllib.request
     import urllib.error
 
     if not GEMINI_API_KEY:
-        return "Gemini API key is not configured. Please set GEMINI_API_KEY in your .env file."
+        logger.error("GEMINI_API_KEY is not configured in backend environment.")
+        raise RuntimeError("Gemini API key is not configured. Please set GEMINI_API_KEY in your environment.")
+
+    last_error = ""
 
     for model in MODELS:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
@@ -64,15 +67,28 @@ def call_gemini_rest(prompt: str, max_tokens: int = 1500, system_instruction: st
         )
 
         try:
-            with urllib.request.urlopen(req, timeout=15) as response:
+            logger.info(f"Calling Gemini API model: {model}")
+            with urllib.request.urlopen(req, timeout=40) as response:
                 result = json.loads(response.read().decode('utf-8'))
                 text = result.get('candidates', [{}])[0].get('content', {}).get('parts', [{}])[0].get('text', '')
                 if text:
+                    logger.info(f"Successfully generated response from model: {model} ({len(text)} chars)")
                     return text.strip()
-        except Exception:
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode('utf-8', errors='replace')
+            logger.error(f"Gemini API HTTP {e.code} for model {model}: {err_body}")
+            if e.code == 429:
+                raise RuntimeError("Google Gemini API rate limit or quota exceeded (HTTP 429). Please wait a moment or try again.")
+            if e.code in (401, 403):
+                raise RuntimeError(f"Google Gemini API authentication failed (HTTP {e.code}). Please verify your API key.")
+            last_error = f"HTTP {e.code}: {err_body[:200]}"
+            continue
+        except Exception as ex:
+            logger.error(f"Exception calling model {model}: {ex}")
+            last_error = str(ex)
             continue
 
-    return "Unable to generate an AI response at this moment. Please verify your API key and connection."
+    raise RuntimeError(f"Unable to generate response from Gemini API: {last_error or 'All models failed.'}")
 
 def extract_json_array(text: str):
     """Safely extracts JSON array from markdown or commentary."""
@@ -354,6 +370,58 @@ JSON ARRAY:"""
 
         return JSONResponse({"error": "Failed to parse MCQs from AI response", "raw": raw}, status_code=502)
     except Exception as e:
+        logger.error(f"Error in /api/quiz: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+async def podcast(request: Request):
+    try:
+        body = await request.json()
+        text = body.get('text', '').strip()
+        filename = body.get('filename', 'document')
+
+        if not text:
+            return JSONResponse({"error": "Text is required"}, status_code=400)
+
+        prompt = f"""You are a dynamic podcast producer creating a 2-host audio overview (similar to Google NotebookLM).
+Hosts:
+- "Alex": Deep, insightful host who introduces key themes, provides context, and synthesizes big-picture implications.
+- "Jordan": Sharp, curious co-host who asks piercing questions, highlights nuances, and points out surprising takeaways.
+
+Generate a lively, engaging 5-6 turn back-and-forth dialogue dissecting "{filename}".
+Return ONLY a valid JSON array of objects:
+[
+  {{
+    "speaker": "Alex",
+    "text": "Welcome everyone! Today we are breaking down...",
+    "topic": "Introduction"
+  }},
+  {{
+    "speaker": "Jordan",
+    "text": "Yeah, and what immediately stood out to me...",
+    "topic": "Key Takeaways"
+  }}
+]
+
+DOCUMENT TEXT:
+{text[:6000]}
+
+JSON ARRAY:"""
+
+        raw = call_gemini_rest(prompt, max_tokens=1800)
+        dialogue = extract_json_array(raw)
+        if isinstance(dialogue, list) and len(dialogue) > 0:
+            formatted = []
+            for item in dialogue:
+                formatted.append({
+                    "speaker": "Jordan" if item.get("speaker") == "Jordan" else "Alex",
+                    "text": str(item.get("text", "")),
+                    "topic": str(item.get("topic")) if item.get("topic") else None
+                })
+            return JSONResponse({"dialogue": formatted})
+
+        return JSONResponse({"error": "Failed to parse podcast dialogue from AI response", "raw": raw}, status_code=502)
+    except Exception as e:
+        logger.error(f"Error in /api/podcast: {e}")
         return JSONResponse({"error": str(e)}, status_code=500)
 
 routes = [
@@ -363,6 +431,7 @@ routes = [
     Route("/api/study", study, methods=["POST"]),
     Route("/api/flashcards", flashcards, methods=["POST"]),
     Route("/api/quiz", quiz, methods=["POST"]),
+    Route("/api/podcast", podcast, methods=["POST"]),
 ]
 
 middleware = [
