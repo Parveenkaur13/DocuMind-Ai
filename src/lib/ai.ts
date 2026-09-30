@@ -868,18 +868,14 @@ export async function callGemini(
 ): Promise<string | null> {
   const models = [
     preferredModel,
-    'gemini-2.5-flash',
-    'gemini-2.0-flash',
-    'gemini-1.5-flash',
-    'gemini-flash-latest',
     'gemini-3.5-flash-lite',
+    'gemini-flash-latest',
+    'gemini-3.8-flash',
+    'gemini-3.6-flash',
+    'gemini-3.5-flash',
     'gemini-3.1-flash-lite',
     'gemini-flash-lite-latest',
     'gemini-3-flash-preview',
-    'gemini-3.8-flash',
-    'gemini-3.7-flash',
-    'gemini-3.6-flash',
-    'gemini-3.5-flash',
   ];
 
   const uniqueModels = Array.from(new Set(models));
@@ -1550,155 +1546,229 @@ JSON RESPONSE:`;
 }
 
 // -------------------------------------------------------------
-// 13. AI Study Suite: Flashcard Generator
+// 12b. Robust JSON Array Extraction Helper
 // -------------------------------------------------------------
-export async function generateFlashcardsAI(docText: string, docName: string): Promise<Flashcard[]> {
-  const geminiKey = getActiveGeminiApiKey();
-  if (geminiKey && docText.length > 50) {
-    const prompt = `You are an expert educator. Extract 6 high-impact study flashcards from "${docName}".
-Return ONLY a valid JSON array of objects with the exact schema:
-[
-  {
-    "id": "1",
-    "question": "Clear conceptual or factual question",
-    "answer": "Concise, authoritative answer",
-    "sourceSnippet": "Relevant excerpt from document"
-  }
-]
+export function extractJsonArray<T = unknown>(text: string): T[] | null {
+  if (!text) return null;
+  const clean = text
+    .replace(/^```json\s*/gim, '')
+    .replace(/^```\s*/gim, '')
+    .replace(/```$/gim, '')
+    .trim();
 
-DOCUMENT:
-${docText.slice(0, 3000)}
-
-JSON ARRAY:`;
-
+  const startIdx = clean.indexOf('[');
+  const endIdx = clean.lastIndexOf(']');
+  if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
     try {
-      const raw = await callGemini(prompt, geminiKey, 'gemini-3.5-flash-lite', 1400);
-      if (raw) {
-        const cleaned = raw.replace(/```json/g, '').replace(/```/g, '').trim();
-        const parsed = JSON.parse(cleaned);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.map((item, idx) => ({
-            id: String(item.id || idx + 1),
-            question: String(item.question || ''),
-            answer: String(item.answer || ''),
-            sourceSnippet: item.sourceSnippet ? String(item.sourceSnippet) : undefined,
-          }));
-        }
-      }
+      const parsed = JSON.parse(clean.slice(startIdx, endIdx + 1));
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
     } catch {
-      // Fallback below
+      // try whole text parse
     }
   }
 
-  // Robust Heuristic Fallback
-  const sentences = docText.split(/[.!?]+/).map((s) => s.trim()).filter((s) => s.length > 30);
-  const flashcards: Flashcard[] = [];
-  const count = Math.min(6, Math.max(3, sentences.length));
-  for (let i = 0; i < count; i++) {
-    const s = sentences[i * Math.floor(sentences.length / count)] || sentences[i];
-    if (!s) continue;
-    const words = s.split(' ');
-    const subject = words.slice(0, 4).join(' ');
-    flashcards.push({
-      id: String(i + 1),
-      question: `What are the core requirements and implications regarding ${subject}?`,
-      answer: s,
-      sourceSnippet: s,
-    });
+  try {
+    const parsed = JSON.parse(clean);
+    if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+  } catch {
+    // failure
   }
-  return flashcards;
+  return null;
 }
 
 // -------------------------------------------------------------
-// 14. AI Study Suite: Multiple-Choice Quiz Generator
+// 13. AI Study Suite: Flashcard Generator
 // -------------------------------------------------------------
-export async function generateQuizAI(docText: string, docName: string, count: number = 10): Promise<QuizQuestion[]> {
+export async function generateFlashcardsAI(
+  docText: string,
+  docName: string,
+  count: number = 6,
+): Promise<Flashcard[]> {
+  const cleanText = docText?.trim() || '';
+  if (!cleanText || cleanText.length < 20) {
+    throw new Error(`The document "${docName}" does not contain enough text to generate flashcards.`);
+  }
+
+  // 1. Try local Python backend if available
+  const backendUrl =
+    (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BACKEND_URL) || 'http://localhost:8000';
+  try {
+    const res = await fetch(`${backendUrl}/api/flashcards`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: cleanText,
+        filename: docName,
+        count,
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.flashcards) && data.flashcards.length > 0) {
+        return data.flashcards.map((item: Record<string, unknown>, idx: number) => ({
+          id: String(item.id || idx + 1),
+          question: String(item.question || ''),
+          answer: String(item.answer || ''),
+          sourceSnippet: item.sourceSnippet ? String(item.sourceSnippet) : undefined,
+        }));
+      }
+    }
+  } catch {
+    // Proceed to direct Gemini call
+  }
+
+  // 2. Direct Google Gemini REST API call
   const geminiKey = getActiveGeminiApiKey();
-  if (geminiKey && docText.length > 50) {
-    const prompt = `You are a certified university exam creator. Formulate ${count} challenging, high-yield multiple-choice questions based strictly on "${docName}".
+  if (geminiKey) {
+    const prompt = `You are an elite academic educator. Formulate ${count} high-impact, grounded study flashcards based strictly on "${docName}".
+Each flashcard must focus on a core concept, key formula, important term, or quantitative metric found directly in the text.
+
 Return ONLY a valid JSON array of objects with the exact schema:
 [
   {
     "id": "1",
-    "question": "Question text here?",
-    "options": ["Option A", "Option B", "Option C", "Option D"],
-    "correctIndex": 0,
-    "explanation": "Why this option is correct based strictly on the text."
+    "question": "Clear conceptual or factual question / term?",
+    "answer": "Concise, authoritative answer directly from document",
+    "sourceSnippet": "Relevant quote or citation from the text"
   }
 ]
 
 DOCUMENT:
-${docText.slice(0, 4500)}
+${cleanText.slice(0, 6000)}
 
 JSON ARRAY:`;
 
-    try {
-      const raw = await callGemini(prompt, geminiKey, 'gemini-3.5-flash-lite', 2400);
-      if (raw) {
-        const cleaned = raw.replace(/```json/g, '').replace(/```/g, '').trim();
-        const parsed = JSON.parse(cleaned);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.map((item, idx) => ({
-            id: String(item.id || idx + 1),
-            question: String(item.question || ''),
-            options: Array.isArray(item.options) ? item.options.map(String) : ['Yes', 'No', 'Partially', 'N/A'],
-            correctIndex: typeof item.correctIndex === 'number' ? item.correctIndex : 0,
-            explanation: String(item.explanation || 'Directly grounded in the source text.'),
-          }));
-        }
+    const raw = await callGemini(prompt, geminiKey, 'gemini-3.5-flash-lite', 1800);
+    if (raw) {
+      const parsed = extractJsonArray<Record<string, unknown>>(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((item, idx) => ({
+          id: String(item.id || idx + 1),
+          question: String(item.question || ''),
+          answer: String(item.answer || ''),
+          sourceSnippet: item.sourceSnippet ? String(item.sourceSnippet) : undefined,
+        }));
       }
-    } catch {
-      // Fallback below
     }
   }
 
-  // Heuristic Fallback
-  return [
-    {
-      id: '1',
-      question: `What is the primary operational scope defined in ${docName}?`,
-      options: [
-        'Strategic directives, milestones, and implementation standards',
-        'Unstructured exploratory notes without organizational timeline',
-        'Third-party marketing copy without internal alignment',
-        'Deprecated historical archives awaiting decommission',
-      ],
-      correctIndex: 0,
-      explanation: `The document outlines core implementation criteria and factual guidelines for ${docName}.`,
-    },
-    {
-      id: '2',
-      question: `How are metrics and compliance benchmarks validated in this document?`,
-      options: [
-        'Through anecdotal estimates',
-        'Through continuous verification and grounded data metrics',
-        'By skipping periodic milestone audits',
-        'By relying solely on unverified external assumptions',
-      ],
-      correctIndex: 1,
-      explanation: 'Grounded intelligence demands quantitative verification and cited evidence.',
-    },
-    {
-      id: '3',
-      question: `What is the recommended cadence for reviewing action items from ${docName}?`,
-      options: [
-        'Quarterly or milestone-driven review with designated stakeholders',
-        'Once every five years',
-        'Only when catastrophic failures occur',
-        'No regular cadence is necessary',
-      ],
-      correctIndex: 0,
-      explanation: 'Operational governance mandates periodic sprint and milestone reviews.',
-    },
-  ];
+  throw new Error(
+    `Unable to generate AI flashcards for "${docName}". Please check your connection or verify that the Gemini API is accessible.`,
+  );
+}
+
+// -------------------------------------------------------------
+// 14. AI Study Suite: Multiple-Choice Quiz Generator (MCQs)
+// -------------------------------------------------------------
+export async function generateQuizAI(
+  docText: string,
+  docName: string,
+  count: number = 10,
+): Promise<QuizQuestion[]> {
+  const cleanText = docText?.trim() || '';
+  if (!cleanText || cleanText.length < 20) {
+    throw new Error(`The document "${docName}" does not contain enough text to generate MCQs.`);
+  }
+
+  // 1. Try local Python backend if available
+  const backendUrl =
+    (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BACKEND_URL) || 'http://localhost:8000';
+  try {
+    const res = await fetch(`${backendUrl}/api/quiz`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: cleanText,
+        filename: docName,
+        count,
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.questions) && data.questions.length > 0) {
+        return data.questions.map((q: Record<string, unknown>, idx: number) => {
+          let opts: string[] = Array.isArray(q.options) ? q.options.map(String) : [];
+          if (opts.length > 4) opts = opts.slice(0, 4);
+          while (opts.length < 4) opts.push('None of the above');
+
+          let cIdx = typeof q.correctIndex === 'number' ? q.correctIndex : 0;
+          if (cIdx < 0 || cIdx >= opts.length) cIdx = 0;
+
+          return {
+            id: String(q.id || idx + 1),
+            question: String(q.question || ''),
+            options: opts,
+            correctIndex: cIdx,
+            explanation: String(q.explanation || 'Directly grounded in the source text.'),
+          };
+        });
+      }
+    }
+  } catch {
+    // Proceed to direct Gemini call
+  }
+
+  // 2. Direct Google Gemini REST API call
+  const geminiKey = getActiveGeminiApiKey();
+  if (geminiKey) {
+    const prompt = `You are a certified university exam creator. Formulate ${count} challenging, high-yield multiple-choice questions based strictly on "${docName}".
+CRITICAL REQUIREMENTS:
+1. Every question MUST have EXACTLY 4 distinct options.
+2. Provide the correctIndex (0 for first option, 1 for second, 2 for third, 3 for fourth).
+3. Include an in-depth explanation grounded strictly in the provided document text.
+4. Return ONLY a valid JSON array of objects with the exact schema:
+[
+  {
+    "id": "1",
+    "question": "Clear question text?",
+    "options": ["Option A text", "Option B text", "Option C text", "Option D text"],
+    "correctIndex": 0,
+    "explanation": "Why this option is correct based on the document facts."
+  }
+]
+
+DOCUMENT TEXT:
+${cleanText.slice(0, 7000)}
+
+JSON ARRAY:`;
+
+    const raw = await callGemini(prompt, geminiKey, 'gemini-3.5-flash-lite', 2800);
+    if (raw) {
+      const parsed = extractJsonArray<Record<string, unknown>>(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((item, idx) => {
+          let opts: string[] = Array.isArray(item.options) ? item.options.map(String) : [];
+          if (opts.length > 4) opts = opts.slice(0, 4);
+          while (opts.length < 4) opts.push('None of the above');
+
+          let cIdx = typeof item.correctIndex === 'number' ? item.correctIndex : 0;
+          if (cIdx < 0 || cIdx >= opts.length) cIdx = 0;
+
+          return {
+            id: String(item.id || idx + 1),
+            question: String(item.question || ''),
+            options: opts,
+            correctIndex: cIdx,
+            explanation: String(item.explanation || 'Directly grounded in the source text.'),
+          };
+        });
+      }
+    }
+  }
+
+  throw new Error(
+    `Unable to generate real AI multiple-choice questions for "${docName}". Please check your connection or verify that the Gemini API is accessible.`,
+  );
 }
 
 // -------------------------------------------------------------
 // 15. NotebookLM-Style Audio Podcast Generator (Alex & Jordan)
 // -------------------------------------------------------------
 export async function generatePodcastAI(docText: string, docName: string): Promise<PodcastDialogue[]> {
+  const cleanText = docText?.trim() || '';
   const geminiKey = getActiveGeminiApiKey();
-  if (geminiKey && docText.length > 50) {
+
+  if (geminiKey && cleanText.length > 50) {
     const prompt = `You are a dynamic podcast producer creating a 2-host audio overview (similar to Google NotebookLM).
 Hosts:
 - "Alex": Deep, insightful host who introduces key themes, provides context, and synthesizes big-picture implications.
@@ -1718,15 +1788,14 @@ Return ONLY a valid JSON array of objects:
 ]
 
 DOCUMENT TEXT:
-${docText.slice(0, 3000)}
+${cleanText.slice(0, 5000)}
 
 JSON ARRAY:`;
 
     try {
       const raw = await callGemini(prompt, geminiKey, 'gemini-3.5-flash-lite', 1600);
       if (raw) {
-        const cleaned = raw.replace(/```json/g, '').replace(/```/g, '').trim();
-        const parsed = JSON.parse(cleaned);
+        const parsed = extractJsonArray<Record<string, unknown>>(raw);
         if (Array.isArray(parsed) && parsed.length > 0) {
           return parsed.map((turn) => ({
             speaker: turn.speaker === 'Jordan' ? 'Jordan' : 'Alex',
@@ -1736,42 +1805,17 @@ JSON ARRAY:`;
         }
       }
     } catch {
-      // Fallback below
+      // Fall through to error
     }
   }
 
-  // Heuristic Fallback
-  return [
-    {
-      speaker: 'Alex',
-      text: `Welcome in everyone! Today we're breaking down "${docName}", and honestly, there is a lot of substantive material to unpack here.`,
-      topic: 'Introduction',
-    },
-    {
-      speaker: 'Jordan',
-      text: `Absolutely, Alex. What immediately struck me is how grounded the data points are. It doesn't just present high-level generalizations—it lays down concrete numbers and operational parameters.`,
-      topic: 'First Impressions',
-    },
-    {
-      speaker: 'Alex',
-      text: `Exactly. If you look at the core sections, the focus is squarely on execution and measurable performance. It bridges the gap between strategy and execution.`,
-      topic: 'Core Strategy',
-    },
-    {
-      speaker: 'Jordan',
-      text: `And for anyone responsible for delivering on these goals, the clear takeaways and timelines make it a roadmap you can actually hold teams accountable to.`,
-      topic: 'Actionability',
-    },
-    {
-      speaker: 'Alex',
-      text: `Couldn't agree more. That's the power of having this indexed in DocuMind—you can ask any granular question and get immediate answers with exact source snippets.`,
-      topic: 'Summary',
-    },
-  ];
+  throw new Error(
+    `Unable to generate audio podcast dialogue for "${docName}". Please check your network connection or API configuration.`,
+  );
 }
 
 // -------------------------------------------------------------
-// 15. Comprehensive Personalized Study Suite Generator
+// 16. Comprehensive Personalized Study Suite Generator
 // -------------------------------------------------------------
 export type StudyMaterialType =
   | 'summary'
@@ -1790,6 +1834,36 @@ export async function generateStudyMaterialAI(
   type: StudyMaterialType,
   difficulty: StudyDifficulty = 'intermediate',
 ): Promise<string> {
+  const cleanText = docText?.trim() || '';
+  if (!cleanText || cleanText.length < 20) {
+    throw new Error(`The document "${docName}" does not contain enough text to generate study material.`);
+  }
+
+  // 1. Try local Python backend if available
+  const backendUrl =
+    (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BACKEND_URL) || 'http://localhost:8000';
+  try {
+    const res = await fetch(`${backendUrl}/api/study`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: cleanText,
+        filename: docName,
+        type,
+        difficulty,
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.result && typeof data.result === 'string') {
+        return data.result;
+      }
+    }
+  } catch {
+    // Proceed to direct Gemini call
+  }
+
+  // 2. Direct Google Gemini REST API call
   const geminiKey = getActiveGeminiApiKey();
 
   const difficultyInstructions: Record<StudyDifficulty, string> = {
@@ -1851,7 +1925,8 @@ Format with:
 For each concept:
 - **[Concept Name]**: [Precise definition and why it matters in this context]`,
 
-    explain_beginner: `Explain "${docName}" using the Feynman Technique (Explain Like I'm 5 / Beginner Friendly).
+    explain_beginner: `Explain "${docName}" using the Feynman Technique (Explain Like I'm 5 / Clear Topic Breakdown).
+Level: ${difficulty.toUpperCase()} (${difficultyInstructions[difficulty]}).
 Use simple everyday language, vivid real-world analogies, and step-by-step intuition.
 Structure with:
 ## 🌟 The Big Picture (In Plain English)
@@ -1874,17 +1949,17 @@ ${difficultyInstructions[difficulty]}
 STRICT GROUNDING: Base all assertions, facts, formulas, and data points strictly on the document text. Do not hallucinate external facts.
 
 DOCUMENT TEXT ("${docName}"):
-${docText.slice(0, 5000)}
+${cleanText.slice(0, 8000)}
 
 STUDY MATERIAL:`;
 
-    const res = await callGemini(fullPrompt, geminiKey, 'gemini-3.5-flash-lite', 1600);
+    const res = await callGemini(fullPrompt, geminiKey, 'gemini-3.5-flash-lite', 2400);
     if (res) return res;
   }
 
-  // Grounded local fallback generator
-  const sentences = docText.split(/[.?!]\s+/).filter((s) => s.trim().length > 20);
-  const sample = sentences.slice(0, 6).join('. ') + '.';
-  return `## Study Notes for ${docName}\n\n*Difficulty Level: ${difficulty.toUpperCase()}*\n\n### Core Summary\n${sample}\n\n### Key Concepts\n- **Document Source**: ${docName}\n- **Scope**: Document contains verified factual statements and operational metrics.\n- **Review Points**:\n  - Review primary section headers and quantitative indicators.\n  - Focus on definitions and timeline targets.\n\n*(Connect an active Gemini API key or local Python backend for full AI synthesis)*`;
+  throw new Error(
+    `Unable to generate real AI study material for "${docName}". Please check your internet connection or verify that the Gemini API is accessible.`,
+  );
 }
+
 

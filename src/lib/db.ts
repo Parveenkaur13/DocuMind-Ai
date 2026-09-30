@@ -517,3 +517,42 @@ export async function fetchTotalQuestionsCount(userId?: string | null): Promise<
   }
 }
 
+export async function clearAllChatHistory(userId?: string | null): Promise<void> {
+  try {
+    const convs = getLocalConvs();
+    for (const c of convs) {
+      localStorage.removeItem(`${STORAGE_KEY_MSGS}_${c.id}`);
+    }
+    localStorage.removeItem(STORAGE_KEY_CONVS);
+    setLocalConvs([]);
+
+    if (userId) {
+      try {
+        await supabase.from('chat_messages').delete().eq('user_id', userId);
+        await supabase.from('chats').delete().eq('user_id', userId);
+        await supabase.from('conversations').delete().eq('user_id', userId);
+      } catch {
+        // ignore
+      }
+    }
+  } catch {
+    // ignore
+  }
+}
+
+export async function clearAllDocuments(userId?: string | null): Promise<void> {
+  try {
+    localStorage.setItem(STORAGE_KEY_DOCS, JSON.stringify([]));
+
+    if (userId) {
+      try {
+        await supabase.from('documents').delete().eq('user_id', userId);
+      } catch {
+        // ignore
+      }
+    }
+  } catch {
+    // ignore
+  }
+}
+

@@ -45,6 +45,7 @@ if (isRunning) {
   console.log('Ready to receive requests! Press Ctrl+C to close.');
   setInterval(() => {}, 60000);
 } else {
+  const serverScript = path.join(__dirname, 'server.py');
   console.log(`Starting DocuMind backend using: ${pythonExe}`);
   const child = spawn(pythonExe, [serverScript], {
     stdio: 'inherit',

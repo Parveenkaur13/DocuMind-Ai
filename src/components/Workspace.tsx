@@ -592,6 +592,17 @@ function WorkspaceInner() {
       <SettingsModal
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
+        onClearChatHistory={() => {
+          setConversations([]);
+          setMessages([]);
+          loadConvs();
+        }}
+        onClearDocumentData={() => {
+          setDocuments([]);
+          setActiveDocId(null);
+          setSelectedDocIds([]);
+          loadDocs();
+        }}
       />
 
       {/* Help Dialog */}
