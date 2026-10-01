@@ -764,15 +764,12 @@ export function setCustomGeminiApiKey(key: string): void {
 
 export async function testGeminiKey(key: string): Promise<boolean> {
   const testModels = [
-    'gemini-2.5-flash',
-    'gemini-2.0-flash',
-    'gemini-1.5-flash',
-    'gemini-flash-latest',
     'gemini-3.5-flash-lite',
+    'gemini-3.5-flash',
     'gemini-3.1-flash-lite',
-    'gemini-flash-lite-latest',
-    'gemini-3-flash-preview',
     'gemini-3.8-flash',
+    'gemini-flash-latest',
+    'gemini-flash-lite-latest',
   ];
   for (const model of testModels) {
     try {
@@ -976,10 +973,11 @@ export async function callGemini(
   const models = [
     preferredModel,
     'gemini-3.5-flash-lite',
-    'gemini-3.8-flash',
     'gemini-3.5-flash',
     'gemini-3.1-flash-lite',
+    'gemini-3.8-flash',
     'gemini-flash-latest',
+    'gemini-flash-lite-latest',
   ];
 
   const uniqueModels = Array.from(new Set(models));

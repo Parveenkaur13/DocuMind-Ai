@@ -1,4 +1,4 @@
-﻿import fs from 'node:fs';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -58,7 +58,15 @@ export async function parseJsonBody(req) {
 }
 
 function loadEnvIfAvailable() {
-  if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim().length > 10) {
+  const currentKey = (
+    process.env.GEMINI_API_KEY ||
+    process.env.GOOGLE_GEMINI_API_KEY ||
+    process.env.GEMINI_KEY ||
+    process.env.GOOGLE_API_KEY ||
+    ''
+  ).trim();
+
+  if (currentKey.length > 10) {
     return;
   }
   try {
@@ -71,7 +79,8 @@ function loadEnvIfAvailable() {
       for (const p of candidates) {
         if (fs.existsSync(p)) {
           process.loadEnvFile(p);
-          if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim().length > 10) {
+          const loaded = (process.env.GEMINI_API_KEY || '').trim();
+          if (loaded.length > 10) {
             break;
           }
         }
@@ -82,30 +91,53 @@ function loadEnvIfAvailable() {
   }
 }
 
+function cleanSecret(val) {
+  if (!val || typeof val !== 'string') return '';
+  return val.trim().replace(/^[\"']|[\"']$/g, '').trim();
+}
+
 export function getGeminiKey(req) {
   // 1. If client provided custom key via Authorization header, honor it
   if (req) {
     const auth = req.headers?.authorization || req.headers?.Authorization || '';
     if (typeof auth === 'string' && auth.startsWith('Bearer ')) {
-      const customKey = auth.slice(7).trim();
+      const customKey = cleanSecret(auth.slice(7));
       if (customKey && customKey.length > 10) {
         return customKey;
       }
     }
   }
 
-  // 2. Read GEMINI_API_KEY from the server environment (Vercel production or server process)
-  const envKey = (process.env.GEMINI_API_KEY || '').trim();
-  if (envKey.length > 10) {
-    return envKey;
+  // 2. Read GEMINI_API_KEY (and common aliases) from the server environment
+  const candidates = [
+    process.env.GEMINI_API_KEY,
+    process.env.GOOGLE_GEMINI_API_KEY,
+    process.env.GEMINI_KEY,
+    process.env.GOOGLE_API_KEY,
+  ];
+
+  for (const c of candidates) {
+    const cleaned = cleanSecret(c);
+    if (cleaned.length > 10) {
+      return cleaned;
+    }
   }
 
   // 3. In local node runtime, try loading .env if not loaded yet
   loadEnvIfAvailable();
 
-  const loadedKey = (process.env.GEMINI_API_KEY || '').trim();
-  if (loadedKey.length > 10) {
-    return loadedKey;
+  const refreshedCandidates = [
+    process.env.GEMINI_API_KEY,
+    process.env.GOOGLE_GEMINI_API_KEY,
+    process.env.GEMINI_KEY,
+    process.env.GOOGLE_API_KEY,
+  ];
+
+  for (const c of refreshedCandidates) {
+    const cleaned = cleanSecret(c);
+    if (cleaned.length > 10) {
+      return cleaned;
+    }
   }
 
   return '';
@@ -113,9 +145,11 @@ export function getGeminiKey(req) {
 
 export const VERIFIED_MODELS = [
   'gemini-3.5-flash-lite',
-  'gemini-3.8-flash',
   'gemini-3.5-flash',
-  'gemini-3.1-flash-lite'
+  'gemini-3.1-flash-lite',
+  'gemini-3.8-flash',
+  'gemini-flash-latest',
+  'gemini-flash-lite-latest',
 ];
 
 export async function callGeminiApi(prompt, maxTokens = 2400, req = null) {
@@ -197,8 +231,8 @@ export function extractJsonArray(text) {
   if (!text || typeof text !== 'string') return null;
 
   const clean = text
-    .replace(/^`json\s*/gm, '')
-    .replace(/^`\s*/gm, '')
+    .replace(new RegExp('^' + String.fromCharCode(96).repeat(3) + 'json\\s*', 'gm'), '')
+    .replace(new RegExp('^' + String.fromCharCode(96).repeat(3) + '\\s*', 'gm'), '')
     .trim();
 
   const start = clean.indexOf('[');

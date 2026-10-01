@@ -27,14 +27,19 @@ load_dotenv(dotenv_path=env_path)
 
 GEMINI_API_KEY = (
     os.getenv('GEMINI_API_KEY')
+    or os.getenv('GOOGLE_GEMINI_API_KEY')
+    or os.getenv('GEMINI_KEY')
+    or os.getenv('GOOGLE_API_KEY')
     or ''
-).strip()
+).strip().strip('"').strip("'")
 
 MODELS = [
     'gemini-3.5-flash-lite',
-    'gemini-3.8-flash',
     'gemini-3.5-flash',
     'gemini-3.1-flash-lite',
+    'gemini-3.8-flash',
+    'gemini-flash-latest',
+    'gemini-flash-lite-latest',
 ]
 
 def call_gemini_rest(prompt: str, max_tokens: int = 1500, system_instruction: str = "") -> str:
@@ -44,7 +49,7 @@ def call_gemini_rest(prompt: str, max_tokens: int = 1500, system_instruction: st
 
     if not GEMINI_API_KEY:
         logger.error("GEMINI_API_KEY is not configured in backend environment.")
-        raise RuntimeError("Gemini API key is not configured. Please set GEMINI_API_KEY in your environment.")
+        raise RuntimeError("GEMINI_API_KEY is not configured on the production server. Please configure GEMINI_API_KEY in your Vercel project environment variables.")
 
     last_error = ""
 
