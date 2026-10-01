@@ -1,4 +1,4 @@
-import { setCorsHeaders, callGeminiApi } from './_gemini.js';
+﻿import { setCorsHeaders, callGeminiApi, parseJsonBody } from './_gemini.js';
 
 export default async function handler(req, res) {
   setCorsHeaders(res);
@@ -12,7 +12,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
+    const body = await parseJsonBody(req);
     const text = (body.text || '').trim();
     const filename = body.filename || 'document';
     const type = body.type || 'short_notes';
@@ -41,10 +41,10 @@ Structure with:
       short_notes: `Generate comprehensive, high-retention Short Notes from "${filename}".
 Level: ${difficulty.toUpperCase()} (${diffInst}).
 Structure with:
-## 📌 Core Takeaways & Quick Facts
-## 🔑 Critical Definitions & Formulae
-## 📊 Key Data Points, Dates & Metrics
-## 💡 Important Rules, Principles & Guidelines
+## Core Takeaways & Quick Facts
+## Critical Definitions & Formulae
+## Key Data Points, Dates & Metrics
+## Important Rules, Principles & Guidelines
 Use bold highlights, bullet points, and clean GitHub markdown.`,
 
       important_questions: `Generate 6-8 High-Yield Important Questions with comprehensive model answers based strictly on "${filename}".
@@ -76,9 +76,9 @@ Format each with:
       key_concepts: `Generate a structured Glossary & Conceptual Framework of all key concepts from "${filename}".
 Level: ${difficulty.toUpperCase()} (${diffInst}).
 Format with:
-## 🧠 Core Conceptual Framework
+## Core Conceptual Framework
 [Diagrammatic hierarchy or conceptual breakdown]
-## 📖 Concept Glossary
+## Concept Glossary
 For each concept:
 - **[Concept Name]**: [Precise definition and why it matters in this context]`,
 
@@ -86,10 +86,10 @@ For each concept:
 Level: ${difficulty.toUpperCase()} (${diffInst}).
 Use simple everyday language, vivid real-world analogies, and step-by-step intuition.
 Structure with:
-## 🌟 The Big Picture (In Plain English)
-## 🧩 How It Works (A Simple Analogy)
-## 🔍 What You Actually Need to Know
-## 🚀 Why This Matters in the Real World`,
+## The Big Picture (In Plain English)
+## How It Works (A Simple Analogy)
+## What You Actually Need to Know
+## Why This Matters in the Real World`,
     };
 
     const chosenPrompt = prompts[type] || prompts.short_notes;
@@ -104,7 +104,7 @@ ${diffInst}
 STRICT GROUNDING: Base all assertions, facts, formulas, and data points strictly on the document text. Do not hallucinate external facts.
 
 DOCUMENT TEXT ("${filename}"):
-${text.slice(0, 10000)}
+${text.slice(0, 12000)}
 
 STUDY MATERIAL:`;
 

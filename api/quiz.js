@@ -1,4 +1,4 @@
-import { setCorsHeaders, callGeminiApi, extractJsonArray } from './_gemini.js';
+﻿import { setCorsHeaders, callGeminiApi, extractJsonArray, parseJsonBody } from './_gemini.js';
 
 export default async function handler(req, res) {
   setCorsHeaders(res);
@@ -12,7 +12,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
+    const body = await parseJsonBody(req);
     const text = (body.text || '').trim();
     const filename = body.filename || 'document';
     const count = parseInt(body.count || 10, 10);
@@ -38,7 +38,7 @@ CRITICAL REQUIREMENTS:
 ]
 
 DOCUMENT TEXT:
-${text.slice(0, 9000)}
+${text.slice(0, 10000)}
 
 JSON ARRAY:`;
 

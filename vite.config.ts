@@ -1,10 +1,35 @@
-import { defineConfig, Plugin } from 'vite';
+﻿import { defineConfig, Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath, URL, pathToFileURL } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
 
+function loadRootEnv() {
+  try {
+    const envFile = path.resolve(process.cwd(), '.env');
+    if (fs.existsSync(envFile)) {
+      const content = fs.readFileSync(envFile, 'utf-8');
+      for (const line of content.split('\n')) {
+        const match = line.match(/^\s*([\w.-]+)\s*=\s*(.*)?\s*$/);
+        if (match) {
+          const key = match[1];
+          let val = (match[2] || '').trim();
+          if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+            val = val.slice(1, -1);
+          }
+          if (!process.env[key]) {
+            process.env[key] = val;
+          }
+        }
+      }
+    }
+  } catch {
+    // Ignore
+  }
+}
+
 function serverlessApiPlugin(): Plugin {
+  loadRootEnv();
   return {
     name: 'serverless-api-plugin',
     configureServer(server) {
@@ -14,6 +39,8 @@ function serverlessApiPlugin(): Plugin {
         const routeName = urlPath.replace(/^\/api\//, '').replace(/\/+$/, '');
         const jsFile = path.resolve(`api/${routeName}.js`);
         if (!fs.existsSync(jsFile)) return next();
+
+        loadRootEnv();
 
         try {
           const fileUrl = pathToFileURL(jsFile).href;
@@ -66,12 +93,6 @@ export default defineConfig({
   server: {
     host: true,
     port: 5173,
-    proxy: {
-      '/api': {
-        target: 'http://127.0.0.1:8000',
-        changeOrigin: true,
-      },
-    },
   },
   optimizeDeps: {
     exclude: ['lucide-react'],

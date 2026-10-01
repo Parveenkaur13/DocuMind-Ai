@@ -1,4 +1,4 @@
-import { setCorsHeaders, callGeminiApi } from './_gemini.js';
+﻿import { setCorsHeaders, callGeminiApi, parseJsonBody } from './_gemini.js';
 
 export default async function handler(req, res) {
   setCorsHeaders(res);
@@ -12,7 +12,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
+    const body = await parseJsonBody(req);
     const question = (body.question || '').trim();
     const context = (body.context || '').trim();
     const citations = body.citations || [];

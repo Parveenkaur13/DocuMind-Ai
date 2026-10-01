@@ -1,4 +1,8 @@
-﻿export function ensureResHelpers(res) {
+﻿import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+export function ensureResHelpers(res) {
   if (!res) return;
   if (!res.status) {
     res.status = function (code) {
@@ -22,7 +26,64 @@ export function setCorsHeaders(res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
 }
 
+export async function parseJsonBody(req) {
+  if (!req) return {};
+  if (req.body) {
+    if (typeof req.body === 'string') {
+      try {
+        return JSON.parse(req.body);
+      } catch {
+        return {};
+      }
+    }
+    if (typeof req.body === 'object') {
+      return req.body;
+    }
+  }
+
+  return new Promise((resolve) => {
+    let data = '';
+    req.on('data', (chunk) => {
+      data += chunk;
+    });
+    req.on('end', () => {
+      try {
+        resolve(data ? JSON.parse(data) : {});
+      } catch {
+        resolve({});
+      }
+    });
+    req.on('error', () => resolve({}));
+  });
+}
+
+function loadEnvIfAvailable() {
+  if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim().length > 10) {
+    return;
+  }
+  try {
+    if (typeof process.loadEnvFile === 'function') {
+      const candidates = [
+        path.resolve(process.cwd(), '.env'),
+        path.resolve(process.cwd(), '../.env'),
+        fileURLToPath(new URL('../.env', import.meta.url)),
+      ];
+      for (const p of candidates) {
+        if (fs.existsSync(p)) {
+          process.loadEnvFile(p);
+          if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim().length > 10) {
+            break;
+          }
+        }
+      }
+    }
+  } catch {
+    // Ignore in production
+  }
+}
+
 export function getGeminiKey(req) {
+  // 1. If client provided custom key via Authorization header, honor it
   if (req) {
     const auth = req.headers?.authorization || req.headers?.Authorization || '';
     if (typeof auth === 'string' && auth.startsWith('Bearer ')) {
@@ -33,34 +94,34 @@ export function getGeminiKey(req) {
     }
   }
 
-  const envKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || '';
-  if (envKey && envKey.trim().length > 10) {
-    return envKey.trim();
+  // 2. Read GEMINI_API_KEY from the server environment (Vercel production or server process)
+  const envKey = (process.env.GEMINI_API_KEY || '').trim();
+  if (envKey.length > 10) {
+    return envKey;
   }
 
-  try {
-    if (typeof process.loadEnvFile === 'function') {
-      process.loadEnvFile();
-    }
-  } catch {
-    // Ignore in production
+  // 3. In local node runtime, try loading .env if not loaded yet
+  loadEnvIfAvailable();
+
+  const loadedKey = (process.env.GEMINI_API_KEY || '').trim();
+  if (loadedKey.length > 10) {
+    return loadedKey;
   }
 
-  return process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || '';
+  return '';
 }
 
 export const VERIFIED_MODELS = [
   'gemini-3.5-flash-lite',
   'gemini-3.8-flash',
   'gemini-3.5-flash',
-  'gemini-3.1-flash-lite',
-  'gemini-flash-latest'
+  'gemini-3.1-flash-lite'
 ];
 
 export async function callGeminiApi(prompt, maxTokens = 2400, req = null) {
   const key = getGeminiKey(req);
   if (!key) {
-    throw new Error('GEMINI_API_KEY is not configured on the production server. Please configure GEMINI_API_KEY in your Vercel project environment variables or enter a custom key in Settings.');
+    throw new Error('GEMINI_API_KEY is not configured on the production server. Please configure GEMINI_API_KEY in your Vercel project environment variables.');
   }
 
   let lastError = '';
@@ -136,8 +197,8 @@ export function extractJsonArray(text) {
   if (!text || typeof text !== 'string') return null;
 
   const clean = text
-    .replace(/^```json\s*/gm, '')
-    .replace(/^```\s*/gm, '')
+    .replace(/^`json\s*/gm, '')
+    .replace(/^`\s*/gm, '')
     .trim();
 
   const start = clean.indexOf('[');

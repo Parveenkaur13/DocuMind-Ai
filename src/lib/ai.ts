@@ -1260,13 +1260,48 @@ export function generateSummary(text: string): string {
 }
 
 export async function generateAISummary(text: string, docName: string): Promise<string> {
-  const geminiKey = getActiveGeminiApiKey();
-  if (!geminiKey) return generateSummary(text);
+  const cleanText = text?.trim() || '';
+  if (!cleanText || cleanText.length < 20) {
+    return generateSummary(cleanText);
+  }
 
-  const prompt = `You are DocuMind AI. Provide a concise, accurate 2-3 sentence executive summary of the following document ("${docName}").
-Include key metrics, dates, and conclusions explicitly:\n\n${text.slice(0, 4000)}`;
-  const res = await callGemini(prompt, geminiKey, 'gemini-3.5-flash-lite', 350);
-  return res || generateSummary(text);
+  // 1. Try unified production serverless backend
+  try {
+    const baseUrl = getBackendBaseUrl();
+    const res = await fetch(`${baseUrl}/api/summarize`, {
+      method: 'POST',
+      headers: getApiHeaders(),
+      body: JSON.stringify({
+        text: cleanText.slice(0, 10000),
+        filename: docName,
+      }),
+      signal: createTimeoutSignal(30000),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.summary && typeof data.summary === 'string') {
+        return data.summary.trim();
+      }
+    }
+  } catch {
+    // If backend unreachable, proceed to custom client key check or fallback
+  }
+
+  // 2. Direct Gemini call if custom key configured in Settings
+  const geminiKey = getActiveGeminiApiKey();
+  if (geminiKey) {
+    try {
+      const prompt = `You are DocuMind AI. Provide a concise, accurate 2-3 sentence executive summary of the following document ("${docName}").
+Include key metrics, dates, and conclusions explicitly:\n\n${cleanText.slice(0, 4000)}`;
+      const res = await callGemini(prompt, geminiKey, 'gemini-3.5-flash-lite', 350);
+      if (res) return res;
+    } catch {
+      // Fall through to heuristic
+    }
+  }
+
+  return generateSummary(cleanText);
 }
 
 // -------------------------------------------------------------

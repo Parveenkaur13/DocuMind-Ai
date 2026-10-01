@@ -26,17 +26,15 @@ env_path = Path(__file__).resolve().parent.parent / '.env'
 load_dotenv(dotenv_path=env_path)
 
 GEMINI_API_KEY = (
-    os.getenv('VITE_GEMINI_API_KEY')
-    or os.getenv('GEMINI_API_KEY')
+    os.getenv('GEMINI_API_KEY')
     or ''
-)
+).strip()
 
 MODELS = [
     'gemini-3.5-flash-lite',
     'gemini-3.8-flash',
     'gemini-3.5-flash',
     'gemini-3.1-flash-lite',
-    'gemini-flash-latest',
 ]
 
 def call_gemini_rest(prompt: str, max_tokens: int = 1500, system_instruction: str = "") -> str:

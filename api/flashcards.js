@@ -1,4 +1,4 @@
-import { setCorsHeaders, callGeminiApi, extractJsonArray } from './_gemini.js';
+﻿import { setCorsHeaders, callGeminiApi, extractJsonArray, parseJsonBody } from './_gemini.js';
 
 export default async function handler(req, res) {
   setCorsHeaders(res);
@@ -12,7 +12,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
+    const body = await parseJsonBody(req);
     const text = (body.text || '').trim();
     const filename = body.filename || 'document';
     const count = parseInt(body.count || 6, 10);
@@ -35,7 +35,7 @@ Return ONLY a valid JSON array of objects with the exact schema:
 ]
 
 DOCUMENT:
-${text.slice(0, 8000)}
+${text.slice(0, 9000)}
 
 JSON ARRAY:`;
 
